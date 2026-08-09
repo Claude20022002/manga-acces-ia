@@ -9,7 +9,7 @@ from pathlib import Path
 from pydub import AudioSegment
 
 from manga_access.backends.base import TTSBackend
-from manga_access.pipeline.audio_assembler import assemble_audio
+from manga_access.pipeline.audio_assembler import _detect_lang, assemble_audio
 from manga_access.schemas.narrative_script import NarrativeScript, NarrativeSegment
 
 
@@ -31,6 +31,7 @@ class _FakeTTSBackend(TTSBackend):
     def __init__(self) -> None:
         self.load_calls = 0
         self.unload_calls = 0
+        self.synthesize_calls: list[tuple[str, str, str]] = []
 
     def load(self) -> None:
         self.load_calls += 1
@@ -39,17 +40,20 @@ class _FakeTTSBackend(TTSBackend):
         self.unload_calls += 1
 
     def synthesize(self, text: str, voice_id: str, lang: str = "en-us") -> bytes:
+        self.synthesize_calls.append((text, voice_id, lang))
         return _make_silent_wav_bytes()
 
 
-def _make_segment(id_: str) -> NarrativeSegment:
+def _make_segment(
+    id_: str, text: str = "dummy", kind: str = "dialogue"
+) -> NarrativeSegment:
     """Construit un NarrativeSegment minimal pour les tests."""
     return NarrativeSegment(
         id=id_,
         panel_id="panel-0",
-        kind="dialogue",
+        kind=kind,
         voice_id="af_sky",
-        text="dummy",
+        text=text,
     )
 
 
@@ -108,3 +112,49 @@ def test_load_unload_called(tmp_path: Path) -> None:
 
     assert backend.load_calls == 1
     assert backend.unload_calls == 1
+
+
+def test_detect_lang_japanese_hiragana() -> None:
+    """Texte contenant du hiragana -> 'ja'."""
+    assert _detect_lang("こんにちは", kind="dialogue") == "ja"
+
+
+def test_detect_lang_japanese_katakana() -> None:
+    """Texte contenant du katakana -> 'ja'."""
+    assert _detect_lang("カタカナ", kind="dialogue") == "ja"
+
+
+def test_detect_lang_japanese_kanji() -> None:
+    """Texte contenant du kanji -> 'ja'."""
+    assert _detect_lang("東京", kind="dialogue") == "ja"
+
+
+def test_detect_lang_scene_description_french() -> None:
+    """Texte latin de kind='scene_description' -> 'fr'."""
+    assert _detect_lang("2 personnages détectés.", kind="scene_description") == "fr"
+
+
+def test_detect_lang_default_english() -> None:
+    """Texte latin d'un autre kind -> 'en-us' par défaut."""
+    assert _detect_lang("Hello there!", kind="dialogue") == "en-us"
+
+
+def test_detect_lang_japanese_wins_over_scene_description() -> None:
+    """Priorité : japonais détecté même si kind='scene_description' -> 'ja'."""
+    assert _detect_lang("こんにちは", kind="scene_description") == "ja"
+
+
+def test_assemble_audio_passes_detected_lang(tmp_path: Path) -> None:
+    """assemble_audio() transmet le lang détecté à synthesize() par segment."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[
+            _make_segment("seg-ja", text="こんにちは", kind="dialogue"),
+            _make_segment("seg-en", text="Hello there", kind="dialogue"),
+        ],
+    )
+    backend = _FakeTTSBackend()
+    assemble_audio(script, backend, tmp_path / "out.opus")
+
+    langs = [call[2] for call in backend.synthesize_calls]
+    assert langs == ["ja", "en-us"]
