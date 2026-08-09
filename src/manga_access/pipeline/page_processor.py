@@ -8,6 +8,7 @@ from loguru import logger
 from PIL import Image
 
 from manga_access.backends.base import OCRBackend, StructureBackend
+from manga_access.pipeline.scene_descriptor import describe_panel
 from manga_access.schemas.manga_page import BBox, Character, MangaPage, Panel
 
 
@@ -78,10 +79,14 @@ class PageProcessor:
                 )
         self._ocr_backend.unload()
 
+        characters = self._build_characters(detections)
+        for panel in panels:
+            panel.scene_description = describe_panel(panel, n_characters=len(characters))
+
         return MangaPage(
             source={"file": str(image_path), "page_index": 0},
             reading_direction="right_to_left",
-            characters=self._build_characters(detections),
+            characters=characters,
             panels=panels,
         )
 
