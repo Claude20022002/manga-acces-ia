@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loguru import logger
 from PIL import Image
 
 from manga_access.backends.base import OCRBackend, StructureBackend
