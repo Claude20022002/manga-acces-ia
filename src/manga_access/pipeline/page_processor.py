@@ -22,6 +22,17 @@ def _find_panel_for_text(panels: list[Panel], text_bbox: BBox) -> Panel | None:
     return None
 
 
+def _clip_bbox(bbox: BBox, width: int, height: int) -> BBox:
+    """Ramène `bbox` dans les bornes [0, width] x [0, height] de l'image source."""
+    x1, y1, x2, y2 = bbox
+    return (
+        max(0.0, x1),
+        max(0.0, y1),
+        min(float(width), x2),
+        min(float(height), y2),
+    )
+
+
 class PageProcessor:
     """Orchestration minimale d'une planche : structure -> OCR -> MangaPage."""
 
@@ -37,11 +48,19 @@ class PageProcessor:
         detections = self._structure_backend.detect(image)
         self._structure_backend.unload()
 
+        width, height = image.size
         panels = [
-            Panel(id=f"panel-{i}", order=i, bbox=tuple(float(v) for v in bbox))
+            Panel(
+                id=f"panel-{i}",
+                order=i,
+                bbox=_clip_bbox(tuple(float(v) for v in bbox), width, height),
+            )
             for i, bbox in enumerate(detections.get("panels", []))
         ]
-        text_bboxes = [tuple(float(v) for v in bbox) for bbox in detections.get("texts", [])]
+        text_bboxes = [
+            _clip_bbox(tuple(float(v) for v in bbox), width, height)
+            for bbox in detections.get("texts", [])
+        ]
         logger.info(f"Magiv2 : {len(text_bboxes)} bbox(es) texte brut(es) détectée(s)")
 
         self._ocr_backend.load()
