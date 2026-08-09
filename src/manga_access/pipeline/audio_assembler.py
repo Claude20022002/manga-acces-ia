@@ -29,7 +29,11 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
     silence = AudioSegment.silent(duration=_SILENCE_BETWEEN_SEGMENTS_MS)
 
     for index, segment in enumerate(script.segments):
-        audio_bytes = tts_backend.synthesize(segment.text, segment.voice_id)
+        text_stripped = segment.text.strip()
+        if not text_stripped:
+            logger.warning(f"Segment ignoré (texte vide) : {segment.id!r}")
+            continue
+        audio_bytes = tts_backend.synthesize(text_stripped, segment.voice_id)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
 
         if index > 0:

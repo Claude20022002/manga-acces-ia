@@ -7,6 +7,7 @@ import io
 import os
 import time
 
+import numpy as np
 import soundfile as sf
 from kokoro_onnx import Kokoro
 from loguru import logger
@@ -48,6 +49,9 @@ class KokoroBackend(TTSBackend):
             raise RuntimeError("KokoroBackend.load() doit être appelé avant synthesize().")
 
         samples, sample_rate = self._model.create(text, voice=voice_id, lang=lang)
+        if len(samples) == 0:
+            logger.warning(f"Kokoro : texte non phonémisable, silence retourné : {text!r}")
+            samples = np.zeros(int(sample_rate * 0.1), dtype=np.float32)
 
         buffer = io.BytesIO()
         sf.write(buffer, samples, sample_rate, format="WAV")
