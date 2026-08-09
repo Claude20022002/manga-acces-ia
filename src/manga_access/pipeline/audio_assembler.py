@@ -27,14 +27,18 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
 
     combined = AudioSegment.empty()
     silence = AudioSegment.silent(duration=_SILENCE_BETWEEN_SEGMENTS_MS)
+    synthesized_count = 0
 
     for index, segment in enumerate(script.segments):
         text_stripped = segment.text.strip()
         if not text_stripped:
             logger.warning(f"Segment ignoré (texte vide) : {segment.id!r}")
             continue
+        if segment.kind == "scene_description":
+            continue
         audio_bytes = tts_backend.synthesize(text_stripped, segment.voice_id)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
+        synthesized_count += 1
 
         if index > 0:
             combined += silence
@@ -47,5 +51,5 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
 
     elapsed = time.perf_counter() - start
     logger.info(
-        f"{len(script.segments)} segment(s) assemblé(s) en {elapsed:.2f}s -> {output_path}"
+        f"{synthesized_count} segment(s) assemblé(s) en {elapsed:.2f}s -> {output_path}"
     )
