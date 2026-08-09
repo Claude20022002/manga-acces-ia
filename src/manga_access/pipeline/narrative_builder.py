@@ -5,8 +5,8 @@ from __future__ import annotations
 from manga_access.schemas.manga_page import MangaPage, Panel, TextElement
 from manga_access.schemas.narrative_script import NarrativeScript, NarrativeSegment
 
-VOICE_NARRATOR = "narrator"
-VOICE_UNKNOWN = "voice_unknown"
+VOICE_NARRATOR = "af_sky"
+VOICE_UNKNOWN = "af_bella"
 
 
 def _voice_for_element(element: TextElement, character_voices: dict[str, str]) -> str:

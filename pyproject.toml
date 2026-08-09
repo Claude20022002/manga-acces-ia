@@ -6,7 +6,13 @@ requires-python = ">=3.11"
 dependencies = [
     "manga-ocr>=0.1.8",
     "kokoro-onnx>=0.3.0",
+    "soundfile>=0.12.0",
     "pydub>=0.25.1",
+    # audioop a été retiré de la stdlib en Python 3.13 ; pydub en dépend
+    # (via un repli sur pyaudioop, absent) — backport officiel CPython.
+    # Marqueur requis : audioop-lts n'existe pas pour Python <3.13 (inutile,
+    # audioop natif est encore présent dans la stdlib à ces versions).
+    "audioop-lts>=0.2.2; python_version >= '3.13'",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "pydantic>=2.0",

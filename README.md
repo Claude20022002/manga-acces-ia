@@ -13,6 +13,40 @@ Prérequis : [uv](https://docs.astral.sh/uv/) et Python >= 3.11.
 uv sync
 ```
 
+## Prérequis système
+
+Deux dépendances système, hors gestion `uv`/`pyproject.toml` :
+
+- **FFmpeg** — requis par `pydub` pour décoder/encoder l'audio (assemblage
+  des segments TTS, export `.opus`) :
+  ```bash
+  sudo apt install ffmpeg
+  ```
+- **espeak-ng** — requis par `kokoro-onnx` pour la phonémisation :
+  ```bash
+  sudo apt install espeak-ng
+  ```
+
+## Poids des modèles
+
+Les poids Magiv2 et manga-ocr se téléchargent automatiquement depuis
+HuggingFace au premier chargement (`from_pretrained`), aucune action
+manuelle requise.
+
+Kokoro (`kokoro-onnx`) ne télécharge rien automatiquement — les poids
+doivent être récupérés manuellement depuis les releases GitHub du projet :
+
+```bash
+mkdir -p models/kokoro
+wget -P models/kokoro https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx
+wget -P models/kokoro https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+```
+
+Variante int8 (~88 Mo) choisie pour la contrainte CPU/RAM du projet,
+cohérente avec la quantisation retenue ailleurs dans la stack. `models/`
+est ignoré par git (`.gitignore`) — téléchargement local à refaire à
+chaque nouvel environnement.
+
 ## Dépendances et reproductibilité
 
 ### Dépendances cachées de Magiv2

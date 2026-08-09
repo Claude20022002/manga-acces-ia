@@ -71,6 +71,10 @@ class TTSBackend(ABC):
     """Contrat pour un backend de synthèse vocale."""
 
     @abstractmethod
-    def synthesize(self, text: str, voice_id: str) -> bytes:
-        """Synthétise `text` avec la voix `voice_id` et retourne l'audio brut."""
+    def synthesize(self, text: str, voice_id: str, lang: str = "en-us") -> bytes:
+        """Synthétise `text` avec la voix `voice_id` et retourne l'audio brut.
+
+        `lang` pilote la phonémisation (ex. "en-us", "ja" une fois la
+        traduction Qwen3-VL intégrée) — indépendant de `voice_id`.
+        """
         raise NotImplementedError
