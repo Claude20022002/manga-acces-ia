@@ -42,6 +42,7 @@ import io
 
 from pydub import AudioSegment
 
+from manga_access.pipeline.audio_assembler import _detect_lang
 from manga_access.pipeline.narrative_builder import build_narrative_script
 from manga_access.pipeline.scene_descriptor import describe_panel
 from manga_access.schemas.manga_page import BBox, Character, MangaPage, Panel
@@ -225,7 +226,11 @@ def _assemble_audio_loaded(
     silence = AudioSegment.silent(duration=_SILENCE_BETWEEN_SEGMENTS_MS)
 
     for index, segment in enumerate(script.segments):
-        audio_bytes = tts_backend.synthesize(segment.text, segment.voice_id)
+        if segment.kind == "scene_description":
+            continue
+        text_stripped = segment.text.strip()
+        lang = _detect_lang(text_stripped, segment.kind)
+        audio_bytes = tts_backend.synthesize(text_stripped, segment.voice_id, lang=lang)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
         if index > 0:
             combined += silence
