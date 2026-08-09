@@ -9,7 +9,7 @@ import time
 
 import numpy as np
 import soundfile as sf
-from kokoro_onnx import Kokoro
+from kokoro_onnx import SAMPLE_RATE, Kokoro
 from loguru import logger
 
 from manga_access.backends.base import TTSBackend
@@ -48,9 +48,11 @@ class KokoroBackend(TTSBackend):
         if self._model is None:
             raise RuntimeError("KokoroBackend.load() doit être appelé avant synthesize().")
 
-        samples, sample_rate = self._model.create(text, voice=voice_id, lang=lang)
-        if len(samples) == 0:
+        try:
+            samples, sample_rate = self._model.create(text, voice=voice_id, lang=lang)
+        except ValueError:
             logger.warning(f"Kokoro : texte non phonémisable, silence retourné : {text!r}")
+            sample_rate = SAMPLE_RATE
             samples = np.zeros(int(sample_rate * 0.1), dtype=np.float32)
 
         buffer = io.BytesIO()
