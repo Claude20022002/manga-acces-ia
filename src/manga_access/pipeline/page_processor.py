@@ -42,6 +42,7 @@ class PageProcessor:
             for i, bbox in enumerate(detections.get("panels", []))
         ]
         text_bboxes = [tuple(float(v) for v in bbox) for bbox in detections.get("texts", [])]
+        logger.info(f"Magiv2 : {len(text_bboxes)} bbox(es) texte brut(es) détectée(s)")
 
         self._ocr_backend.load()
         for text_bbox in text_bboxes:
@@ -49,9 +50,13 @@ class PageProcessor:
             panel = _find_panel_for_text(panels, text_bbox)
             if panel is not None:
                 panel.elements.append(element)
-            # else : centre du texte hors de tout panel détecté — élément
-            # ignoré silencieusement dans cette version minimale (Phase 1).
-            # À logger en Phase 2.
+            else:
+                cx = (text_bbox[0] + text_bbox[2]) / 2
+                cy = (text_bbox[1] + text_bbox[3]) / 2
+                logger.warning(
+                    f"Texte hors panel ignoré : centre=({cx:.1f}, {cy:.1f}) "
+                    f"bbox={tuple(round(v, 1) for v in text_bbox)}"
+                )
         self._ocr_backend.unload()
 
         return MangaPage(
