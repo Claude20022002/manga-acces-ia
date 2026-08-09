@@ -1,0 +1,24 @@
+# Modèles téléchargés (jamais à lire)
+models/
+*.gguf
+*.bin
+*.safetensors
+
+# Données manga (ne pas lire, potentiellement gros)
+data/manga/
+data/raw/
+
+# Environnement Python
+.venv/
+__pycache__/
+*.pyc
+
+# Cache pipeline
+data/cache/
+
+# Outputs audio
+data/outputs/
+
+# Logs
+*.log
+logs/
