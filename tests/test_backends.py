@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import numpy as np
 import pytest
 from PIL import Image
 
-from manga_access.backends.base import OCRBackend, TTSBackend
+from manga_access.backends.base import OCRBackend, StructureBackend, TTSBackend
 from manga_access.schemas.manga_page import BBox, TextElement
 
 
@@ -15,6 +18,12 @@ def test_ocr_backend_is_abstract() -> None:
         OCRBackend()  # type: ignore[abstract]
 
 
+def test_structure_backend_is_abstract() -> None:
+    """StructureBackend ne peut pas être instanciée directement."""
+    with pytest.raises(TypeError):
+        StructureBackend()  # type: ignore[abstract]
+
+
 def test_tts_backend_is_abstract() -> None:
     """TTSBackend ne peut pas être instanciée directement."""
     with pytest.raises(TypeError):
@@ -22,7 +31,13 @@ def test_tts_backend_is_abstract() -> None:
 
 
 class _FullBackend(OCRBackend, TTSBackend):
-    """Double héritage implémentant les deux méthodes abstraites (recognize + synthesize)."""
+    """Double héritage implémentant toutes les méthodes abstraites requises."""
+
+    def load(self) -> None:
+        pass
+
+    def unload(self) -> None:
+        pass
 
     def recognize(self, image: Image.Image, bbox: BBox) -> TextElement:
         return TextElement(
@@ -38,7 +53,13 @@ class _FullBackend(OCRBackend, TTSBackend):
 
 
 class _PartialBackend(OCRBackend, TTSBackend):
-    """Double héritage n'implémentant que recognize, pas synthesize."""
+    """Implémente load/unload/recognize (OCRBackend) mais pas synthesize (TTSBackend)."""
+
+    def load(self) -> None:
+        pass
+
+    def unload(self) -> None:
+        pass
 
     def recognize(self, image: Image.Image, bbox: BBox) -> TextElement:
         return TextElement(
@@ -50,14 +71,49 @@ class _PartialBackend(OCRBackend, TTSBackend):
         )
 
 
+class _FullStructureBackend(StructureBackend):
+    """Implémente les trois méthodes abstraites de StructureBackend."""
+
+    def load(self) -> None:
+        pass
+
+    def unload(self) -> None:
+        pass
+
+    def detect(self, image: np.ndarray) -> dict[str, Any]:
+        return {"panels": [], "texts": []}
+
+
+class _PartialStructureBackend(StructureBackend):
+    """Implémente load/detect mais pas unload."""
+
+    def load(self) -> None:
+        pass
+
+    def detect(self, image: np.ndarray) -> dict[str, Any]:
+        return {"panels": [], "texts": []}
+
+
 def test_concrete_subclass_implementing_both_methods_is_instantiable() -> None:
-    """Une sous-classe implémentant recognize et synthesize s'instancie sans erreur."""
+    """Une sous-classe implémentant load/unload/recognize et synthesize s'instancie sans erreur."""
     backend = _FullBackend()
     assert isinstance(backend, OCRBackend)
     assert isinstance(backend, TTSBackend)
 
 
 def test_partial_implementation_is_not_instantiable() -> None:
-    """Une sous-classe n'implémentant qu'une des deux méthodes reste abstraite."""
+    """Une sous-classe n'implémentant pas synthesize reste abstraite."""
     with pytest.raises(TypeError):
         _PartialBackend()
+
+
+def test_structure_backend_full_implementation_is_instantiable() -> None:
+    """Une sous-classe implémentant load/unload/detect s'instancie sans erreur."""
+    backend = _FullStructureBackend()
+    assert isinstance(backend, StructureBackend)
+
+
+def test_structure_backend_partial_implementation_is_not_instantiable() -> None:
+    """Une sous-classe n'implémentant pas unload reste abstraite."""
+    with pytest.raises(TypeError):
+        _PartialStructureBackend()

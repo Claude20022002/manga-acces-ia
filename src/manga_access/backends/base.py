@@ -1,14 +1,16 @@
 """Interfaces abstraites des backends du pipeline.
 
-Chaque backend concret (OCR, TTS, etc.) doit implémenter une de ces
-interfaces. La logique métier ne doit jamais importer un modèle
+Chaque backend concret (OCR, structuration, TTS, etc.) doit implémenter une de
+ces interfaces. La logique métier ne doit jamais importer un modèle
 directement — toujours passer par ces contrats.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
+import numpy as np
 from PIL import Image
 
 from manga_access.schemas.manga_page import BBox, TextElement
@@ -18,12 +20,49 @@ class OCRBackend(ABC):
     """Contrat pour un backend de reconnaissance de texte japonais."""
 
     @abstractmethod
+    def load(self) -> None:
+        """Charge le modèle en mémoire. Doit être appelé avant `recognize`."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def unload(self) -> None:
+        """Décharge le modèle de la mémoire (contrainte RAM CPU du projet)."""
+        raise NotImplementedError
+
+    @abstractmethod
     def recognize(self, image: Image.Image, bbox: BBox) -> TextElement:
         """Reconnaît le texte contenu dans la région `bbox` de `image`.
 
         L'implémentation est responsable de recadrer l'image selon `bbox`
         avant reconnaissance et de renseigner `confidence` dans le
         `TextElement` retourné.
+        """
+        raise NotImplementedError
+
+
+class StructureBackend(ABC):
+    """Contrat pour un backend de structuration (détection cases/bulles/personnages)."""
+
+    @abstractmethod
+    def load(self) -> None:
+        """Charge le modèle en mémoire. Doit être appelé avant `detect`."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def unload(self) -> None:
+        """Décharge le modèle de la mémoire (contrainte RAM CPU du projet)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def detect(self, image: np.ndarray) -> dict[str, Any]:
+        """Détecte la structure de `image` (planche complète).
+
+        # Any : la structure retournée est hétérogène par nature (listes de
+        # bbox, paires d'indices d'association, labels de cluster, booléens).
+        # Elle reflète le format brut de sortie du modèle de structuration
+        # sous-jacent (ex. Magiv2), avant assemblage dans le schéma MangaPage.
+        Retourne un dict incluant au minimum les clés "panels" et "texts"
+        (listes de bbox [x1, y1, x2, y2]).
         """
         raise NotImplementedError
 
