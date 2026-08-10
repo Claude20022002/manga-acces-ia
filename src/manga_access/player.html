@@ -177,6 +177,13 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .segment-display {
+    text-align: center;
+    margin: 0.75rem 0 0;
+    min-height: 1.2em;
+    color: var(--color-muted);
+  }
+
   #speed-display {
     min-width: 8rem;
     text-align: center;
@@ -195,6 +202,11 @@
   <div class="file-picker">
     <label for="file-input">Choisir un fichier audio (.opus)</label>
     <input type="file" id="file-input" accept=".opus,audio/*">
+  </div>
+
+  <div class="file-picker">
+    <label for="timeline-input">Charger la timeline (.json, optionnel)</label>
+    <input type="file" id="timeline-input" accept=".json,application/json">
   </div>
 
   <p id="file-title" class="file-title">Aucun fichier chargé</p>
@@ -243,6 +255,8 @@
       <p id="time-display" class="time-display" aria-live="polite">00:00 / 00:00</p>
     </div>
 
+    <p id="segment-display" class="segment-display" aria-live="polite">Aucune timeline chargée.</p>
+
     <div class="speed-row">
       <button id="btn-speed-down" type="button" aria-label="Diminuer la vitesse de lecture" disabled>– Vitesse</button>
       <p id="speed-display" aria-live="polite">Vitesse : 1.0x</p>
@@ -265,6 +279,7 @@
 
   const audio = document.getElementById("audio");
   const fileInput = document.getElementById("file-input");
+  const timelineInput = document.getElementById("timeline-input");
   const fileTitle = document.getElementById("file-title");
   const statusMessage = document.getElementById("status-message");
   const player = document.getElementById("player");
@@ -282,6 +297,7 @@
   const seekBar = document.getElementById("seek-bar");
   const timeDisplay = document.getElementById("time-display");
   const speedDisplay = document.getElementById("speed-display");
+  const segmentDisplay = document.getElementById("segment-display");
 
   const controlButtons = [
     btnPlay, btnRestart, btnBack5, btnBack10,
@@ -290,6 +306,8 @@
 
   let currentObjectUrl = null;
   let lastDisplayedSecond = -1;
+  let timelineSegments = [];
+  let currentSegmentIndex = -1;
 
   function formatTime(seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
@@ -326,6 +344,47 @@
     if (!force && currentSecond === lastDisplayedSecond) return;
     lastDisplayedSecond = currentSecond;
     timeDisplay.textContent = formatTime(audio.currentTime) + " / " + formatTime(audio.duration);
+  }
+
+  function resetTimeline() {
+    timelineSegments = [];
+    currentSegmentIndex = -1;
+    segmentDisplay.textContent = "Aucune timeline chargée.";
+  }
+
+  function findSegmentIndex(currentMs) {
+    if (timelineSegments.length === 0) return -1;
+
+    if (currentSegmentIndex >= 0) {
+      const current = timelineSegments[currentSegmentIndex];
+      if (currentMs >= current.start_ms && currentMs < current.end_ms) {
+        return currentSegmentIndex;
+      }
+    }
+
+    for (let i = 0; i < timelineSegments.length; i++) {
+      const segment = timelineSegments[i];
+      if (currentMs >= segment.start_ms && currentMs < segment.end_ms) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  function updateCurrentSegment() {
+    if (timelineSegments.length === 0) return;
+
+    const currentMs = audio.currentTime * 1000;
+    const index = findSegmentIndex(currentMs);
+    if (index === currentSegmentIndex) return;
+    currentSegmentIndex = index;
+
+    if (index === -1) {
+      segmentDisplay.textContent = "";
+      return;
+    }
+    const segment = timelineSegments[index];
+    segmentDisplay.textContent = "[" + segment.kind.toUpperCase() + "] " + segment.text;
   }
 
   function setStatus(message) {
@@ -386,6 +445,7 @@
     audio.playbackRate = 1.0;
     audio.muted = false;
     lastDisplayedSecond = -1;
+    resetTimeline();
 
     fileTitle.textContent = file.name;
     updatePlayButton();
@@ -393,6 +453,29 @@
     updateSpeedDisplay();
     setControlsEnabled(false);
     setStatus("Chargement de « " + file.name + " »…");
+  });
+
+  timelineInput.addEventListener("change", () => {
+    const file = timelineInput.files && timelineInput.files[0];
+    if (!file) return;
+
+    file.text().then((text) => {
+      let data;
+      try {
+        data = JSON.parse(text);
+        if (!data || !Array.isArray(data.segments)) {
+          throw new Error("format de timeline invalide");
+        }
+      } catch (error) {
+        resetTimeline();
+        setStatus("Erreur : fichier timeline invalide.");
+        return;
+      }
+      timelineSegments = data.segments;
+      currentSegmentIndex = -1;
+      segmentDisplay.textContent = "";
+      setStatus("Timeline chargée : " + file.name);
+    });
   });
 
   audio.addEventListener("loadedmetadata", () => {
@@ -413,6 +496,7 @@
       seekBar.value = String(audio.currentTime);
     }
     updateTimeDisplay(false);
+    updateCurrentSegment();
   });
 
   audio.addEventListener("play", updatePlayButton);

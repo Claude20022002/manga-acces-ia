@@ -9,8 +9,9 @@ from pathlib import Path
 from pydub import AudioSegment
 
 from manga_access.backends.base import TTSBackend
-from manga_access.pipeline.audio_assembler import _detect_lang, assemble_audio
+from manga_access.pipeline.audio_assembler import _detect_lang, assemble_audio, save_timeline
 from manga_access.schemas.narrative_script import NarrativeScript, NarrativeSegment
+from manga_access.schemas.timeline import Timeline, TimelineSegment
 
 
 def _make_silent_wav_bytes(duration_ms: int = 100, sample_rate: int = 24000) -> bytes:
@@ -158,3 +159,77 @@ def test_assemble_audio_passes_detected_lang(tmp_path: Path) -> None:
 
     langs = [call[2] for call in backend.synthesize_calls]
     assert langs == ["ja", "en-us"]
+
+
+def test_assemble_audio_returns_timeline_with_correct_boundaries(tmp_path: Path) -> None:
+    """3 segments dialogue -> bornes (0,100), (400,500), (800,900) (100ms audio + 300ms silence)."""
+    output_path = tmp_path / "multi.opus"
+    timeline = assemble_audio(_make_script(3), _FakeTTSBackend(), output_path)
+
+    assert [(s.start_ms, s.end_ms) for s in timeline.segments] == [
+        (0, 100), (400, 500), (800, 900),
+    ]
+    assert [s.id for s in timeline.segments] == ["seg-0", "seg-1", "seg-2"]
+    assert all(s.kind == "dialogue" and s.text == "dummy" for s in timeline.segments)
+
+
+def test_timeline_excludes_scene_description_and_empty_segments(tmp_path: Path) -> None:
+    """scene_description et texte vide n'ont pas d'intervalle audio -> absents de la timeline."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[
+            _make_segment("seg-desc", text="4 personnages détectés.", kind="scene_description"),
+            _make_segment("seg-empty", text="   ", kind="dialogue"),
+            _make_segment("seg-real", text="Bonjour", kind="dialogue"),
+        ],
+    )
+    timeline = assemble_audio(script, _FakeTTSBackend(), tmp_path / "out.opus")
+
+    assert [s.id for s in timeline.segments] == ["seg-real"]
+
+
+def test_timeline_no_leading_silence_after_skipped_segment(tmp_path: Path) -> None:
+    """Un segment scene_description initial (ignoré) n'insère pas 300ms de silence avant le premier segment réel."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[
+            _make_segment("seg-desc", text="Description.", kind="scene_description"),
+            _make_segment("seg-real", text="Bonjour", kind="dialogue"),
+        ],
+    )
+    timeline = assemble_audio(script, _FakeTTSBackend(), tmp_path / "out.opus")
+
+    assert timeline.segments[0].start_ms == 0
+    assert timeline.segments[0].end_ms == 100
+
+
+def test_save_timeline_writes_json(tmp_path: Path) -> None:
+    """save_timeline() écrit un JSON relisible via Timeline.from_json()."""
+    timeline = Timeline(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[
+            TimelineSegment(id="seg-0", kind="dialogue", text="Bonjour", start_ms=0, end_ms=100),
+        ],
+    )
+    output_path = tmp_path / "out.timeline.json"
+    save_timeline(timeline, output_path)
+
+    assert output_path.exists()
+    restored = Timeline.from_json(output_path.read_text(encoding="utf-8"))
+    assert restored == timeline
+
+
+def test_timeline_roundtrip_json() -> None:
+    """to_json() puis from_json() doit reproduire une Timeline identique."""
+    original = Timeline(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[
+            TimelineSegment(id="seg-0", kind="dialogue", text="Bonjour", start_ms=0, end_ms=100),
+            TimelineSegment(id="seg-1", kind="sfx", text="[ドン]", start_ms=400, end_ms=500),
+        ],
+    )
+
+    serialized = original.to_json()
+    restored = Timeline.from_json(serialized)
+
+    assert restored == original
