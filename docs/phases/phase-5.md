@@ -408,3 +408,11 @@ Tâche de documentation pure, aucun code.
 - Exécution des sessions de test utilisateurs et analyse de résultats
 - Backend FastAPI + SQLite (toujours pas construit)
 - Traduction multi-langue des dialogues
+
+## État Qwen3-VL (Phase 6)
+
+- **Constat** : la PR ggml-org/llama.cpp#16780 (« [model] add support for qwen3vl series ») est mergée — le support mainline de Qwen3-VL (dense + MoE) est disponible dans llama.cpp.
+- **GGUF officiel** : `Qwen/Qwen3-VL-4B-Instruct-GGUF` publié officiellement par Qwen sur Hugging Face, quantisation Q4_K_M ~2.5 Go — compatible avec le budget RAM 12 Go en chargement séquentiel (cohérent avec Magiv2/manga-ocr/Kokoro déjà en place).
+- **Décision** : intégration planifiée en **Phase 6**, pas en Phase 5.
+- **Justification** : aucun bug CPU bloquant identifié pour une inférence mono-requête (les deux bugs ouverts connus — #17200 cache KV sur `llama-server`, #16895 sous-utilisation GPU — ne concernent pas ce projet, strictement CPU et sans serveur multi-requêtes) ; le scope de la Phase 5 est déjà complet avec les tâches 5.1 à 5.4.
+- **Prérequis Phase 6** : écrire et valider `benchmarks/qwen_vl_smoketest.py` (chargement du GGUF Q4_K_M, inférence sur une planche réelle du corpus, mesure temps de chargement/RAM/latence) avant d'écrire tout backend de production `QwenVLBackend`.
