@@ -29,6 +29,7 @@ try:
     from manga_access.backends.kokoro_backend import KokoroBackend
     from manga_access.backends.magiv2_backend import Magiv2Backend
     from manga_access.backends.manga_ocr_backend import MangaOCRBackend
+    from manga_access.backends.qwen3vl_backend import QwenVLBackend
 except ImportError as exc:
     print(
         f"Erreur : le paquet '{exc.name}' n'est pas installé.\n"
@@ -113,6 +114,12 @@ def _find_panel_for_text(panels: list[Panel], text_bbox: BBox) -> Panel | None:
     return None
 
 
+def _full_image_bbox(image: Image.Image) -> BBox:
+    """Retourne la bbox couvrant l'image entière (pour describe() en contexte pleine page)."""
+    w, h = image.size
+    return (0.0, 0.0, float(w), float(h))
+
+
 def _build_characters(detections: dict[str, Any]) -> list[Character]:
     """Construit les personnages depuis les clusters bruts retournés par Magiv2."""
     cluster_labels = detections.get("character_cluster_labels", [])
@@ -169,7 +176,7 @@ def _run_structure_phase(states: list[_PageState], structure_backend: Magiv2Back
 
 
 def _run_ocr_phase(states: list[_PageState], ocr_backend: MangaOCRBackend) -> None:
-    """Passe 2 : OCR + description de scène + script narratif, modèle chargé une seule fois."""
+    """Passe 2 : OCR manga-ocr sur toutes les pages, modèle chargé une seule fois."""
     ocr_backend.load()
     try:
         for state in states:
@@ -195,27 +202,67 @@ def _run_ocr_phase(states: list[_PageState], ocr_backend: MangaOCRBackend) -> No
                             f"bbox={tuple(round(v, 1) for v in text_bbox)}"
                         )
 
-                characters = _build_characters(state.detections)
-                for panel in state.panels:
-                    panel.scene_description = describe_panel(
-                        panel, n_characters=len(characters)
-                    )
-
-                state.page = MangaPage(
-                    source={"file": str(state.image_path), "page_index": 0},
-                    reading_direction="right_to_left",
-                    characters=characters,
-                    panels=state.panels,
-                )
-                state.script = build_narrative_script(state.page)
-
                 state.result.texts_lost_count = n_lost
-                state.result.segments_count = len(state.script.segments)
                 state.result.processing_time_s += time.perf_counter() - page_start
             except Exception as exc:  # noqa: BLE001 - benchmark : une page en erreur ne doit pas arrêter le corpus
                 _fail(state, "OCR", exc)
     finally:
         ocr_backend.unload()
+
+
+def _run_vision_phase(states: list[_PageState], vision_backend: QwenVLBackend) -> None:
+    """Passe optionnelle (--vision) : description de scène Qwen3-VL, un seul describe() par page.
+
+    Chargée/déchargée séparément de structuration/OCR/audio (contrainte RAM :
+    Qwen3-VL pic ~7.1 Go, cf. docs/sessions/2026-08-10-qwen-smoketest.md).
+    Même description appliquée à tous les panels de la page, cohérent avec
+    PageProcessor.process().
+    """
+    vision_backend.load()
+    try:
+        for state in states:
+            if state.failed:
+                continue
+            page_start = time.perf_counter()
+            try:
+                image = Image.open(state.image_path).convert("RGB")
+                description = vision_backend.describe(image, _full_image_bbox(image))
+                for panel in state.panels:
+                    panel.scene_description = description
+                state.result.processing_time_s += time.perf_counter() - page_start
+            except Exception as exc:  # noqa: BLE001 - benchmark : une page en erreur ne doit pas arrêter le corpus
+                _fail(state, "vision", exc)
+    finally:
+        vision_backend.unload()
+
+
+def _finalize_pages(states: list[_PageState], vision_enabled: bool) -> None:
+    """Construit MangaPage + NarrativeScript pour chaque page traitée avec succès.
+
+    Étape légère (aucun modèle chargé), exécutée après l'OCR et après la
+    passe vision si activée — sépare la description de scène (règles ou
+    Qwen3-VL) de la construction du script narratif pour que celui-ci voie
+    toujours la description finale, pas une valeur vide.
+    """
+    for state in states:
+        if state.failed:
+            continue
+        try:
+            characters = _build_characters(state.detections)
+            if not vision_enabled:
+                for panel in state.panels:
+                    panel.scene_description = describe_panel(panel, n_characters=len(characters))
+
+            state.page = MangaPage(
+                source={"file": str(state.image_path), "page_index": 0},
+                reading_direction="right_to_left",
+                characters=characters,
+                panels=state.panels,
+            )
+            state.script = build_narrative_script(state.page)
+            state.result.segments_count = len(state.script.segments)
+        except Exception as exc:  # noqa: BLE001 - benchmark : une page en erreur ne doit pas arrêter le corpus
+            _fail(state, "finalisation page", exc)
 
 
 def _assemble_audio_loaded(
@@ -235,8 +282,6 @@ def _assemble_audio_loaded(
     for segment in script.segments:
         text_stripped = segment.text.strip()
         if not text_stripped:
-            continue
-        if segment.kind == "scene_description":
             continue
         lang = _detect_lang(text_stripped, segment.kind)
         audio_bytes = tts_backend.synthesize(text_stripped, segment.voice_id, lang=lang)
@@ -366,8 +411,8 @@ def print_summary(results: list[PageResult], total_wall_time_s: float) -> None:
     print(f"\nTemps total du run (chargements modèles inclus) : {total_wall_time_s:.1f}s")
 
 
-def run_benchmark(folder: Path, output_path: Path, audio_dir: Path) -> None:
-    """Exécute le benchmark corpus complet en 3 passes séquentielles."""
+def run_benchmark(folder: Path, output_path: Path, audio_dir: Path, vision: bool = False) -> None:
+    """Exécute le benchmark corpus complet en 3 passes séquentielles (4 avec --vision)."""
     images = find_images(folder)
     if not images:
         print(f"Aucune image trouvée dans {folder}", file=sys.stderr)
@@ -377,13 +422,20 @@ def run_benchmark(folder: Path, output_path: Path, audio_dir: Path) -> None:
 
     total_start = time.perf_counter()
 
-    logger.info(f"Passe 1/3 : structuration Magiv2 sur {len(states)} page(s)")
+    n_passes = 4 if vision else 3
+    logger.info(f"Passe 1/{n_passes} : structuration Magiv2 sur {len(states)} page(s)")
     _run_structure_phase(states, Magiv2Backend())
 
-    logger.info("Passe 2/3 : OCR manga-ocr + script narratif")
+    logger.info(f"Passe 2/{n_passes} : OCR manga-ocr")
     _run_ocr_phase(states, MangaOCRBackend())
 
-    logger.info("Passe 3/3 : synthèse audio Kokoro")
+    if vision:
+        logger.info(f"Passe 3/{n_passes} : description de scène Qwen3-VL")
+        _run_vision_phase(states, QwenVLBackend())
+
+    _finalize_pages(states, vision_enabled=vision)
+
+    logger.info(f"Passe {n_passes}/{n_passes} : synthèse audio Kokoro")
     _run_audio_phase(states, KokoroBackend(), audio_dir)
 
     total_elapsed = time.perf_counter() - total_start
@@ -418,13 +470,18 @@ def main() -> None:
         default=Path("data/outputs/benchmark"),
         help="Dossier des fichiers audio générés (défaut : data/outputs/benchmark)",
     )
+    parser.add_argument(
+        "--vision",
+        action="store_true",
+        help="Active QwenVLBackend pour la description de scène",
+    )
     args = parser.parse_args()
 
     if not args.folder.is_dir():
         print(f"Erreur : {args.folder} n'est pas un dossier valide.", file=sys.stderr)
         raise SystemExit(1)
 
-    run_benchmark(args.folder, args.output, args.audio_dir)
+    run_benchmark(args.folder, args.output, args.audio_dir, vision=args.vision)
 
 
 if __name__ == "__main__":
