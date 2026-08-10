@@ -42,11 +42,16 @@ import io
 
 from pydub import AudioSegment
 
-from manga_access.pipeline.audio_assembler import _detect_lang, save_transcript
+from manga_access.pipeline.audio_assembler import (
+    _detect_lang,
+    save_transcript,
+    save_timeline,
+)
 from manga_access.pipeline.narrative_builder import build_narrative_script
 from manga_access.pipeline.scene_descriptor import describe_panel
 from manga_access.schemas.manga_page import BBox, Character, MangaPage, Panel
 from manga_access.schemas.narrative_script import NarrativeScript
+from manga_access.schemas.timeline import Timeline, TimelineSegment
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 _SILENCE_BETWEEN_SEGMENTS_MS = 300
@@ -215,30 +220,47 @@ def _run_ocr_phase(states: list[_PageState], ocr_backend: MangaOCRBackend) -> No
 
 def _assemble_audio_loaded(
     script: NarrativeScript, tts_backend: KokoroBackend, output_path: Path
-) -> float:
-    """Synthétise `script` via un backend TTS déjà chargé, retourne la durée en secondes.
+) -> Timeline:
+    """Synthétise `script` via un backend TTS déjà chargé, retourne la Timeline produite.
 
     Réplique pipeline.audio_assembler.assemble_audio() sans les appels
     load()/unload() : dans ce script, Kokoro est chargé une seule fois pour
-    tout le corpus.
+    tout le corpus. Même logique de bornage start_ms/end_ms (basée sur
+    len(combined), pas sur l'index de boucle brut).
     """
     combined = AudioSegment.empty()
     silence = AudioSegment.silent(duration=_SILENCE_BETWEEN_SEGMENTS_MS)
+    timeline_segments: list[TimelineSegment] = []
 
-    for index, segment in enumerate(script.segments):
+    for segment in script.segments:
+        text_stripped = segment.text.strip()
+        if not text_stripped:
+            continue
         if segment.kind == "scene_description":
             continue
-        text_stripped = segment.text.strip()
         lang = _detect_lang(text_stripped, segment.kind)
         audio_bytes = tts_backend.synthesize(text_stripped, segment.voice_id, lang=lang)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
-        if index > 0:
+
+        if len(combined) > 0:
             combined += silence
+        start_ms = len(combined)
         combined += audio
+        end_ms = len(combined)
+
+        timeline_segments.append(
+            TimelineSegment(
+                id=segment.id,
+                kind=segment.kind,
+                text=text_stripped,
+                start_ms=start_ms,
+                end_ms=end_ms,
+            )
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.export(output_path, format="opus")
-    return len(combined) / 1000.0
+    return Timeline(source=script.source, segments=timeline_segments)
 
 
 def _run_audio_phase(
@@ -254,11 +276,15 @@ def _run_audio_phase(
             try:
                 assert state.script is not None
                 output_path = audio_dir / f"{state.image_path.stem}.opus"
-                duration_s = _assemble_audio_loaded(state.script, tts_backend, output_path)
+                timeline = _assemble_audio_loaded(state.script, tts_backend, output_path)
 
                 transcript_path = audio_dir / "transcripts" / f"{state.image_path.stem}.txt"
                 save_transcript(state.script, transcript_path)
 
+                timeline_path = audio_dir / "timelines" / f"{state.image_path.stem}.timeline.json"
+                save_timeline(timeline, timeline_path)
+
+                duration_s = timeline.segments[-1].end_ms / 1000.0 if timeline.segments else 0.0
                 state.result.audio_duration_s = duration_s
                 state.result.processing_time_s += time.perf_counter() - page_start
             except Exception as exc:  # noqa: BLE001 - benchmark : une page en erreur ne doit pas arrêter le corpus
