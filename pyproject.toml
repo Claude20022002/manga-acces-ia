@@ -39,6 +39,7 @@ dependencies = [
     "torch>=2.2.0",
     "torchvision>=0.17.0",
     "llama-cpp-python>=0.3.34",
+    "misaki[ja]>=0.9.4",
 ]
 
 [dependency-groups]
