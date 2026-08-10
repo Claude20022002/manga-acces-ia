@@ -76,9 +76,15 @@ class PageProcessor:
         ]
         logger.info(f"Magiv2 : {len(text_bboxes)} bbox(es) texte brut(es) détectée(s)")
 
+        text_to_char_idx = dict(detections.get("text_character_associations", []))
+        character_cluster_labels = detections.get("character_cluster_labels", [])
+
         self._ocr_backend.load()
-        for text_bbox in text_bboxes:
+        for text_idx, text_bbox in enumerate(text_bboxes):
             element = self._ocr_backend.recognize(image, text_bbox)
+            char_idx = text_to_char_idx.get(text_idx)
+            if char_idx is not None:
+                element.speaker_id = f"char-{character_cluster_labels[char_idx]}"
             panel = _find_panel_for_text(panels, text_bbox)
             if panel is not None:
                 panel.elements.append(element)
