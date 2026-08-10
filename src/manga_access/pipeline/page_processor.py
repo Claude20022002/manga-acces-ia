@@ -7,7 +7,7 @@ from pathlib import Path
 from loguru import logger
 from PIL import Image
 
-from manga_access.backends.base import OCRBackend, StructureBackend
+from manga_access.backends.base import OCRBackend, SceneDescriptionBackend, StructureBackend
 from manga_access.pipeline.scene_descriptor import describe_panel
 from manga_access.schemas.manga_page import BBox, Character, MangaPage, Panel
 
@@ -34,12 +34,24 @@ def _clip_bbox(bbox: BBox, width: int, height: int) -> BBox:
     )
 
 
+def _full_image_bbox(image: Image.Image) -> BBox:
+    """Retourne la bbox couvrant l'image entière (pour describe() en contexte pleine page)."""
+    w, h = image.size
+    return (0.0, 0.0, float(w), float(h))
+
+
 class PageProcessor:
     """Orchestration minimale d'une planche : structure -> OCR -> MangaPage."""
 
-    def __init__(self, structure_backend: StructureBackend, ocr_backend: OCRBackend) -> None:
+    def __init__(
+        self,
+        structure_backend: StructureBackend,
+        ocr_backend: OCRBackend,
+        vision_backend: SceneDescriptionBackend | None = None,
+    ) -> None:
         self._structure_backend = structure_backend
         self._ocr_backend = ocr_backend
+        self._vision_backend = vision_backend
 
     def process(self, image_path: Path) -> MangaPage:
         """Traite la planche à `image_path` et retourne un MangaPage validé."""
@@ -80,8 +92,15 @@ class PageProcessor:
         self._ocr_backend.unload()
 
         characters = self._build_characters(detections)
-        for panel in panels:
-            panel.scene_description = describe_panel(panel, n_characters=len(characters))
+        if self._vision_backend is not None:
+            self._vision_backend.load()
+            description = self._vision_backend.describe(image, _full_image_bbox(image))
+            self._vision_backend.unload()
+            for panel in panels:
+                panel.scene_description = description
+        else:
+            for panel in panels:
+                panel.scene_description = describe_panel(panel, n_characters=len(characters))
 
         return MangaPage(
             source={"file": str(image_path), "page_index": 0},
