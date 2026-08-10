@@ -42,7 +42,7 @@ import io
 
 from pydub import AudioSegment
 
-from manga_access.pipeline.audio_assembler import _detect_lang
+from manga_access.pipeline.audio_assembler import _detect_lang, save_transcript
 from manga_access.pipeline.narrative_builder import build_narrative_script
 from manga_access.pipeline.scene_descriptor import describe_panel
 from manga_access.schemas.manga_page import BBox, Character, MangaPage, Panel
@@ -255,6 +255,9 @@ def _run_audio_phase(
                 assert state.script is not None
                 output_path = audio_dir / f"{state.image_path.stem}.opus"
                 duration_s = _assemble_audio_loaded(state.script, tts_backend, output_path)
+
+                transcript_path = audio_dir / "transcripts" / f"{state.image_path.stem}.txt"
+                save_transcript(state.script, transcript_path)
 
                 state.result.audio_duration_s = duration_s
                 state.result.processing_time_s += time.perf_counter() - page_start

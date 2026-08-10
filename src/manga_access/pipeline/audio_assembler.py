@@ -71,3 +71,15 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
     logger.info(
         f"{synthesized_count} segment(s) assemblé(s) en {elapsed:.2f}s -> {output_path}"
     )
+
+
+def save_transcript(script: NarrativeScript, output_path: Path) -> None:
+    """Sauvegarde le transcript textuel du script narratif dans un fichier .txt."""
+    lines = []
+    for segment in script.segments:
+        if segment.kind == "scene_description":
+            continue
+        prefix = f"[{segment.kind.upper()}]"
+        lines.append(f"{prefix} {segment.text}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("\n".join(lines), encoding="utf-8")
