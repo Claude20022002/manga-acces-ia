@@ -23,13 +23,13 @@ def _detect_lang(text: str, kind: str) -> str:
 
     Priorité : présence de caractères japonais (hiragana/katakana/kanji) ->
     "ja" ; sinon texte de `kind == "scene_description"` (généré par
-    `describe_panel()`, toujours en français) -> "fr" ; sinon -> "en-us"
+    `describe_panel()`, toujours en français) -> "fr-fr" ; sinon -> "en-us"
     (défaut de `TTSBackend.synthesize`).
     """
     if _JAPANESE_CHAR_PATTERN.search(text):
         return "ja"
     if kind == "scene_description":
-        return "fr"
+        return "fr-fr"
     return "en-us"
 
 

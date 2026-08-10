@@ -131,8 +131,8 @@ def test_detect_lang_japanese_kanji() -> None:
 
 
 def test_detect_lang_scene_description_french() -> None:
-    """Texte latin de kind='scene_description' -> 'fr'."""
-    assert _detect_lang("2 personnages détectés.", kind="scene_description") == "fr"
+    """Texte latin de kind='scene_description' -> 'fr-fr'."""
+    assert _detect_lang("2 personnages détectés.", kind="scene_description") == "fr-fr"
 
 
 def test_detect_lang_default_english() -> None:
