@@ -67,6 +67,29 @@ class StructureBackend(ABC):
         raise NotImplementedError
 
 
+class SceneDescriptionBackend(ABC):
+    """Contrat pour un backend de description de scène (VLM)."""
+
+    @abstractmethod
+    def load(self) -> None:
+        """Charge le modèle en mémoire. Doit être appelé avant `describe`."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def unload(self) -> None:
+        """Décharge le modèle de la mémoire (contrainte RAM CPU du projet)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def describe(self, image: Image.Image, bbox: BBox) -> str | None:
+        """Décrit la scène contenue dans la région `bbox` de `image`.
+
+        Retourne None si le backend n'a rien de pertinent à décrire (dégradation
+        gracieuse, cohérent avec `Panel.scene_description: str | None`).
+        """
+        raise NotImplementedError
+
+
 class TTSBackend(ABC):
     """Contrat pour un backend de synthèse vocale."""
 
