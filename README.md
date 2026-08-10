@@ -26,6 +26,10 @@ Deux dépendances système, hors gestion `uv`/`pyproject.toml` :
   ```bash
   sudo apt install espeak-ng
   ```
+  Le binaire `espeak-ng` doit être installé, pas seulement le paquet
+  `espeak-ng-data` (une dépendance transitive possible sans le binaire) :
+  sans lui, la synthèse en français échoue avec `language fr is not
+  supported by the espeak backend`, même si `espeak-ng-data` est présent.
 
 ## Poids des modèles
 
