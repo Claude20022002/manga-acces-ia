@@ -11,7 +11,7 @@ class TimelineSegment(BaseModel):
     """Un segment audio synthétisé, avec ses bornes temporelles dans le fichier assemblé."""
 
     id: str
-    kind: Literal["dialogue", "narration", "sfx", "thought"]
+    kind: Literal["dialogue", "narration", "sfx", "thought", "scene_description"]
     text: str
     start_ms: int = Field(ge=0)
     end_ms: int = Field(ge=0)
@@ -21,9 +21,10 @@ class Timeline(BaseModel):
     """Timeline ordonnée des segments audibles d'une planche, alignée sur le .opus produit.
 
     Assemblée par pipeline/audio_assembler.py::assemble_audio(), en parallèle
-    de l'export du fichier audio. Ne contient jamais de segment de kind
-    "scene_description" : ces segments sont filtrés avant synthèse (cf.
-    audio_assembler.py) et n'ont donc pas d'intervalle audio.
+    de l'export du fichier audio. Les segments "scene_description" sont
+    synthétisés comme les autres (déduplication en amont dans
+    narrative_builder.py pour éviter les répétitions quand un vision_backend
+    applique la même description à tous les panels d'une planche).
     """
 
     schema_version: Literal["1.0"] = "1.0"

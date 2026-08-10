@@ -25,11 +25,23 @@ def _text_for_element(element: TextElement) -> str:
     return element.text_original
 
 
-def _segments_for_panel(panel: Panel, character_voices: dict[str, str]) -> list[NarrativeSegment]:
-    """Construit les segments narratifs d'un panel : description de scène puis éléments de texte."""
+def _segments_for_panel(
+    panel: Panel,
+    character_voices: dict[str, str],
+    last_scene_description: str | None,
+) -> tuple[list[NarrativeSegment], str | None]:
+    """Construit les segments narratifs d'un panel : description de scène (si nouvelle) puis éléments.
+
+    La description de scène n'est émise que si elle diffère de
+    `last_scene_description` : évite de répéter le même paragraphe à
+    chaque panel quand un vision_backend (Qwen3-VL) décrit la planche
+    entière et applique la même description à tous ses panels
+    (cf. PageProcessor.process()). Retourne le texte de scène courant pour
+    que l'appelant le propage au panel suivant.
+    """
     segments: list[NarrativeSegment] = []
 
-    if panel.scene_description is not None:
+    if panel.scene_description is not None and panel.scene_description != last_scene_description:
         segments.append(
             NarrativeSegment(
                 id=f"seg-{panel.id}-scene",
@@ -39,6 +51,7 @@ def _segments_for_panel(panel: Panel, character_voices: dict[str, str]) -> list[
                 text=panel.scene_description,
             )
         )
+        last_scene_description = panel.scene_description
 
     # TODO(Phase 3) : panel.elements n'est pas trié spatialement, c'est l'ordre
     # de détection Magiv2 brut — pas garanti top-to-bottom / droite-à-gauche.
@@ -54,7 +67,7 @@ def _segments_for_panel(panel: Panel, character_voices: dict[str, str]) -> list[
             )
         )
 
-    return segments
+    return segments, last_scene_description
 
 
 def build_narrative_script(page: MangaPage) -> NarrativeScript:
@@ -68,7 +81,11 @@ def build_narrative_script(page: MangaPage) -> NarrativeScript:
     ordered_panels = sorted(page.panels, key=lambda panel: panel.order)
 
     segments: list[NarrativeSegment] = []
+    last_scene_description: str | None = None
     for panel in ordered_panels:
-        segments.extend(_segments_for_panel(panel, character_voices))
+        panel_segments, last_scene_description = _segments_for_panel(
+            panel, character_voices, last_scene_description
+        )
+        segments.extend(panel_segments)
 
     return NarrativeScript(source=page.source, segments=segments)

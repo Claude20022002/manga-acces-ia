@@ -173,8 +173,8 @@ def test_assemble_audio_returns_timeline_with_correct_boundaries(tmp_path: Path)
     assert all(s.kind == "dialogue" and s.text == "dummy" for s in timeline.segments)
 
 
-def test_timeline_excludes_scene_description_and_empty_segments(tmp_path: Path) -> None:
-    """scene_description et texte vide n'ont pas d'intervalle audio -> absents de la timeline."""
+def test_timeline_excludes_only_empty_segments(tmp_path: Path) -> None:
+    """Seul le texte vide n'a pas d'intervalle audio -> scene_description est désormais inclus."""
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
         segments=[
@@ -185,20 +185,21 @@ def test_timeline_excludes_scene_description_and_empty_segments(tmp_path: Path) 
     )
     timeline = assemble_audio(script, _FakeTTSBackend(), tmp_path / "out.opus")
 
-    assert [s.id for s in timeline.segments] == ["seg-real"]
+    assert [s.id for s in timeline.segments] == ["seg-desc", "seg-real"]
 
 
 def test_timeline_no_leading_silence_after_skipped_segment(tmp_path: Path) -> None:
-    """Un segment scene_description initial (ignoré) n'insère pas 300ms de silence avant le premier segment réel."""
+    """Un premier segment ignoré (texte vide) n'insère pas 300ms de silence avant le suivant."""
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
         segments=[
-            _make_segment("seg-desc", text="Description.", kind="scene_description"),
+            _make_segment("seg-empty", text="   ", kind="dialogue"),
             _make_segment("seg-real", text="Bonjour", kind="dialogue"),
         ],
     )
     timeline = assemble_audio(script, _FakeTTSBackend(), tmp_path / "out.opus")
 
+    assert timeline.segments[0].id == "seg-real"
     assert timeline.segments[0].start_ms == 0
     assert timeline.segments[0].end_ms == 100
 

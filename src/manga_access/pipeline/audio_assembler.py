@@ -56,8 +56,6 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
         if not text_stripped:
             logger.warning(f"Segment ignoré (texte vide) : {segment.id!r}")
             continue
-        if segment.kind == "scene_description":
-            continue
         lang = _detect_lang(text_stripped, segment.kind)
         audio_bytes = tts_backend.synthesize(text_stripped, segment.voice_id, lang=lang)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
@@ -95,8 +93,6 @@ def save_transcript(script: NarrativeScript, output_path: Path) -> None:
     """Sauvegarde le transcript textuel du script narratif dans un fichier .txt."""
     lines = []
     for segment in script.segments:
-        if segment.kind == "scene_description":
-            continue
         prefix = f"[{segment.kind.upper()}]"
         lines.append(f"{prefix} {segment.text}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
