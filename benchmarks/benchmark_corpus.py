@@ -45,6 +45,7 @@ from pydub import AudioSegment
 
 from manga_access.pipeline.audio_assembler import (
     _detect_lang,
+    _voice_for_lang,
     save_transcript,
     save_timeline,
 )
@@ -284,7 +285,8 @@ def _assemble_audio_loaded(
         if not text_stripped:
             continue
         lang = _detect_lang(text_stripped, segment.kind)
-        audio_bytes = tts_backend.synthesize(text_stripped, segment.voice_id, lang=lang)
+        voice = _voice_for_lang(segment.voice_id, lang)
+        audio_bytes = tts_backend.synthesize(text_stripped, voice, lang=lang)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
 
         if len(combined) > 0:

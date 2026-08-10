@@ -33,6 +33,20 @@ def _detect_lang(text: str, kind: str) -> str:
     return "en-us"
 
 
+def _voice_for_lang(voice_id: str, lang: str) -> str:
+    """Sélectionne une voix Kokoro compatible avec la langue.
+
+    Les voix anglo-américaines par défaut (af_sky/af_bella, voix par
+    personnage) ne sont pas phonémisées correctement en japonais/français —
+    substitution par une voix dédiée à la langue détectée quand nécessaire.
+    """
+    if lang == "ja":
+        return "jf_alpha"
+    if lang == "fr-fr":
+        return "ff_siwis"
+    return voice_id
+
+
 def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path: Path) -> Timeline:
     """Synthétise et assemble tous les segments de `script` en un fichier .opus.
 
@@ -57,7 +71,8 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
             logger.warning(f"Segment ignoré (texte vide) : {segment.id!r}")
             continue
         lang = _detect_lang(text_stripped, segment.kind)
-        audio_bytes = tts_backend.synthesize(text_stripped, segment.voice_id, lang=lang)
+        voice = _voice_for_lang(segment.voice_id, lang)
+        audio_bytes = tts_backend.synthesize(text_stripped, voice, lang=lang)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
 
         if len(combined) > 0:

@@ -9,7 +9,12 @@ from pathlib import Path
 from pydub import AudioSegment
 
 from manga_access.backends.base import TTSBackend
-from manga_access.pipeline.audio_assembler import _detect_lang, assemble_audio, save_timeline
+from manga_access.pipeline.audio_assembler import (
+    _detect_lang,
+    _voice_for_lang,
+    assemble_audio,
+    save_timeline,
+)
 from manga_access.schemas.narrative_script import NarrativeScript, NarrativeSegment
 from manga_access.schemas.timeline import Timeline, TimelineSegment
 
@@ -143,6 +148,21 @@ def test_detect_lang_default_english() -> None:
 def test_detect_lang_japanese_wins_over_scene_description() -> None:
     """Priorité : japonais détecté même si kind='scene_description' -> 'ja'."""
     assert _detect_lang("こんにちは", kind="scene_description") == "ja"
+
+
+def test_voice_for_lang_japanese_overrides_voice_id() -> None:
+    """lang='ja' -> 'jf_alpha', quel que soit le voice_id d'entrée."""
+    assert _voice_for_lang("af_sky", "ja") == "jf_alpha"
+
+
+def test_voice_for_lang_french_overrides_voice_id() -> None:
+    """lang='fr-fr' -> 'ff_siwis', quel que soit le voice_id d'entrée."""
+    assert _voice_for_lang("af_bella", "fr-fr") == "ff_siwis"
+
+
+def test_voice_for_lang_default_keeps_voice_id() -> None:
+    """lang='en-us' -> voice_id d'entrée inchangé."""
+    assert _voice_for_lang("af_sky", "en-us") == "af_sky"
 
 
 def test_assemble_audio_passes_detected_lang(tmp_path: Path) -> None:
