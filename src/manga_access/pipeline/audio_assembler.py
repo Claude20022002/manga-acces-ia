@@ -47,6 +47,21 @@ def _voice_for_lang(voice_id: str, lang: str) -> str:
     return voice_id
 
 
+def _clean_japanese_text(text: str) -> str:
+    """Nettoie le texte japonais OCR avant synthèse TTS.
+
+    Normalise les points de suspension pleine chasse ('．．．' -> '、') et
+    réduit les répétitions de ponctuation ('！！' -> '！', '？？' -> '？')
+    avant passage au G2P de Kokoro (misaki) — cas réels observés dans
+    data/outputs/benchmark_v6/transcripts/2-1.txt.
+    """
+    text = text.replace("．", "。")
+    text = re.sub(r"[。、]{2,}", "、", text)
+    text = re.sub(r"！{2,}", "！", text)
+    text = re.sub(r"？{2,}", "？", text)
+    return text.strip()
+
+
 def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path: Path) -> Timeline:
     """Synthétise et assemble tous les segments de `script` en un fichier .opus.
 
@@ -72,7 +87,11 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
             continue
         lang = _detect_lang(text_stripped, segment.kind)
         voice = _voice_for_lang(segment.voice_id, lang)
-        audio_bytes = tts_backend.synthesize(text_stripped, voice, lang=lang)
+        if lang == "ja":
+            text_to_synth = _clean_japanese_text(text_stripped)
+        else:
+            text_to_synth = text_stripped
+        audio_bytes = tts_backend.synthesize(text_to_synth, voice, lang=lang)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
 
         if len(combined) > 0:
