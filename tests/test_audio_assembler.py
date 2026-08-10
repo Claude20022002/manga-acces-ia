@@ -150,9 +150,9 @@ def test_detect_lang_japanese_wins_over_scene_description() -> None:
     assert _detect_lang("こんにちは", kind="scene_description") == "ja"
 
 
-def test_voice_for_lang_japanese_overrides_voice_id() -> None:
-    """lang='ja' -> 'jf_alpha', quel que soit le voice_id d'entrée."""
-    assert _voice_for_lang("af_sky", "ja") == "jf_alpha"
+def test_voice_for_lang_japanese_keeps_voice_id() -> None:
+    """lang='ja' -> voice_id d'entrée inchangé (déjà une voix japonaise assignée en amont)."""
+    assert _voice_for_lang("jf_alpha", "ja") == "jf_alpha"
 
 
 def test_voice_for_lang_french_overrides_voice_id() -> None:

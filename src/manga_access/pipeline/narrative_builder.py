@@ -5,8 +5,22 @@ from __future__ import annotations
 from manga_access.schemas.manga_page import MangaPage, Panel, TextElement
 from manga_access.schemas.narrative_script import NarrativeScript, NarrativeSegment
 
-VOICE_NARRATOR = "af_sky"
-VOICE_UNKNOWN = "af_bella"
+VOICE_NARRATOR = "jf_tebukuro"
+VOICE_UNKNOWN = "jf_nezumi"
+
+_CHARACTER_VOICE_POOL = ("jf_alpha", "jf_gongitsune", "jm_kumo")
+
+
+def _voice_for_character(character_id: str) -> str:
+    """Détermine la voix TTS japonaise d'un personnage depuis son cluster_id.
+
+    character_id suit le format "char-{cluster_id}" (PageProcessor,
+    benchmark_corpus.py). Assignation déterministe par cluster_id % 3 sur
+    un pool de voix japonaises Kokoro : même cluster -> même voix à chaque
+    run, jm_kumo apporte une voix masculine pour la variété.
+    """
+    cluster_id = int(character_id.rsplit("-", 1)[-1])
+    return _CHARACTER_VOICE_POOL[cluster_id % len(_CHARACTER_VOICE_POOL)]
 
 
 def _voice_for_element(element: TextElement, character_voices: dict[str, str]) -> str:
@@ -77,7 +91,7 @@ def build_narrative_script(page: MangaPage) -> NarrativeScript:
     `reading_direction`), et pour chacun : un segment de description de scène
     s'il est renseigné, puis un segment par élément de texte détecté.
     """
-    character_voices = {character.id: character.voice_id for character in page.characters}
+    character_voices = {character.id: _voice_for_character(character.id) for character in page.characters}
     ordered_panels = sorted(page.panels, key=lambda panel: panel.order)
 
     segments: list[NarrativeSegment] = []

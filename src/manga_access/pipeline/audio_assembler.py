@@ -36,12 +36,15 @@ def _detect_lang(text: str, kind: str) -> str:
 def _voice_for_lang(voice_id: str, lang: str) -> str:
     """Sélectionne une voix Kokoro compatible avec la langue.
 
-    Les voix anglo-américaines par défaut (af_sky/af_bella, voix par
-    personnage) ne sont pas phonémisées correctement en japonais/français —
-    substitution par une voix dédiée à la langue détectée quand nécessaire.
+    voice_id est déjà une voix japonaise valide pour les segments ja —
+    narrative_builder.py assigne désormais narrateur/inconnu/personnages
+    sur le pool japonais en amont, pas de substitution ici. Le français
+    (descriptions de scène) reste forcé sur une voix dédiée faute de pool
+    de voix par personnage en fr ; l'anglais (fallback par défaut) garde
+    voice_id tel quel.
     """
     if lang == "ja":
-        return "jf_alpha"
+        return voice_id
     if lang == "fr-fr":
         return "ff_siwis"
     return voice_id

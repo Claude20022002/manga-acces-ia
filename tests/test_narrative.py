@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from manga_access.pipeline.narrative_builder import VOICE_NARRATOR, VOICE_UNKNOWN, build_narrative_script
+from manga_access.pipeline.narrative_builder import (
+    VOICE_NARRATOR,
+    VOICE_UNKNOWN,
+    _voice_for_character,
+    build_narrative_script,
+)
 from manga_access.schemas.manga_page import Character, MangaPage, Panel, TextElement
 from manga_access.schemas.narrative_script import NarrativeScript
 
@@ -57,7 +62,7 @@ def test_empty_page() -> None:
 
 
 def test_dialogue_with_speaker() -> None:
-    """Un dialogue avec speaker_id résolu utilise la voix du personnage correspondant."""
+    """Un dialogue avec speaker_id résolu utilise la voix du pool japonais (cluster_id % 3)."""
     element = _make_element("text-1", "dialogue", "おはよう", speaker_id="char-1")
     panel = _make_panel("panel-0", order=0, elements=[element])
     character = Character(id="char-1", voice_id="voice-a", cluster_confidence=1.0)
@@ -65,7 +70,15 @@ def test_dialogue_with_speaker() -> None:
 
     script = build_narrative_script(page)
 
-    assert script.segments[0].voice_id == "voice-a"
+    assert script.segments[0].voice_id == "jf_gongitsune"
+
+
+def test_voice_for_character_pool_by_cluster_id() -> None:
+    """cluster_id % 3 sélectionne déterministiquement dans le pool japonais."""
+    assert _voice_for_character("char-0") == "jf_alpha"
+    assert _voice_for_character("char-1") == "jf_gongitsune"
+    assert _voice_for_character("char-2") == "jm_kumo"
+    assert _voice_for_character("char-3") == "jf_alpha"
 
 
 def test_dialogue_unknown_speaker() -> None:
