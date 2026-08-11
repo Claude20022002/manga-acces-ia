@@ -204,7 +204,7 @@ def test_assemble_audio_returns_timeline_with_correct_boundaries(tmp_path: Path)
 
 
 def test_timeline_excludes_only_empty_segments(tmp_path: Path) -> None:
-    """Seul le texte vide n'a pas d'intervalle audio -> scene_description est désormais inclus."""
+    """Avec include_scene_descriptions=True, seul le texte vide n'a pas d'intervalle audio."""
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
         segments=[
@@ -213,7 +213,9 @@ def test_timeline_excludes_only_empty_segments(tmp_path: Path) -> None:
             _make_segment("seg-real", text="Bonjour", kind="dialogue"),
         ],
     )
-    timeline = assemble_audio(script, _FakeTTSBackend(), tmp_path / "out.opus")
+    timeline = assemble_audio(
+        script, _FakeTTSBackend(), tmp_path / "out.opus", include_scene_descriptions=True
+    )
 
     assert [s.id for s in timeline.segments] == ["seg-desc", "seg-real"]
 
@@ -234,14 +236,29 @@ def test_timeline_no_leading_silence_after_skipped_segment(tmp_path: Path) -> No
     assert timeline.segments[0].end_ms == 100
 
 
-def test_include_scene_descriptions_default_true_synthesizes(tmp_path: Path) -> None:
-    """Par défaut (include_scene_descriptions non précisé), scene_description est synthétisé."""
+def test_include_scene_descriptions_default_false_skips_synthesis(tmp_path: Path) -> None:
+    """Par défaut (include_scene_descriptions non précisé), scene_description n'est plus synthétisé."""
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
         segments=[_make_segment("seg-desc", text="Une rue calme.", kind="scene_description")],
     )
     backend = _FakeTTSBackend()
     timeline = assemble_audio(script, backend, tmp_path / "out.opus")
+
+    assert backend.synthesize_calls == []
+    assert timeline.segments == []
+
+
+def test_include_scene_descriptions_true_still_synthesizes(tmp_path: Path) -> None:
+    """include_scene_descriptions=True (opt-in) restaure la synthèse des scene_description."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-desc", text="Une rue calme.", kind="scene_description")],
+    )
+    backend = _FakeTTSBackend()
+    timeline = assemble_audio(
+        script, backend, tmp_path / "out.opus", include_scene_descriptions=True
+    )
 
     assert len(backend.synthesize_calls) == 1
     assert [s.id for s in timeline.segments] == ["seg-desc"]
@@ -250,7 +267,7 @@ def test_include_scene_descriptions_default_true_synthesizes(tmp_path: Path) -> 
 def test_include_scene_descriptions_false_excludes_from_timeline_and_synthesis(
     tmp_path: Path,
 ) -> None:
-    """include_scene_descriptions=False : scene_description ignoré comme un segment vide."""
+    """include_scene_descriptions=False (explicite, redondant avec le défaut) : même comportement."""
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
         segments=[
@@ -267,6 +284,19 @@ def test_include_scene_descriptions_false_excludes_from_timeline_and_synthesis(
     assert all(call[0] != "Une rue calme." for call in backend.synthesize_calls)
 
 
+def test_scene_description_excluded_from_audio_but_kept_for_transcript(tmp_path: Path) -> None:
+    """Exclu de l'audio par défaut, un scene_description reste dans script.segments pour le transcript."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-desc", text="Deux personnages détectés.", kind="scene_description")],
+    )
+    backend = _FakeTTSBackend()
+    assemble_audio(script, backend, tmp_path / "out.opus")
+
+    assert backend.synthesize_calls == []  # rien synthétisé
+    assert script.segments[0].text == "Deux personnages détectés."  # toujours là pour save_transcript()
+
+
 def test_narration_lang_none_leaves_text_unchanged(tmp_path: Path) -> None:
     """narration_lang=None (défaut) : aucun enrichissement, texte synthétisé tel quel."""
     script = NarrativeScript(
@@ -280,29 +310,39 @@ def test_narration_lang_none_leaves_text_unchanged(tmp_path: Path) -> None:
 
 
 def test_narration_lang_enriches_text_before_synthesis(tmp_path: Path) -> None:
-    """narration_lang="fr" : un segment narration (voix narrateur) est synthétisé avant le dialogue."""
+    """narration_lang="fr" : un segment narration (voix narrateur) est synthétisé avant le dialogue.
+
+    Un sfx compagnon (même panel) est nécessaire : narration_builder.py
+    n'annonce plus un dialogue qui clôt son panel (rien de vocal après lui).
+    """
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
-        segments=[_make_segment("seg-1", text="Bonjour", kind="dialogue")],
+        segments=[
+            _make_segment("seg-1", text="Bonjour", kind="dialogue"),
+            _make_segment("seg-sfx", text="[ドン]", kind="sfx"),
+        ],
     )
     backend = _FakeTTSBackend()
     timeline = assemble_audio(script, backend, tmp_path / "out.opus", narration_lang="fr")
 
-    assert [call[0] for call in backend.synthesize_calls] == ["Elle dit :", "Bonjour"]
-    assert backend.synthesize_calls[0][1] == "ff_siwis"
-    assert [s.text for s in timeline.segments] == ["Elle dit :", "Bonjour"]
-    assert [s.kind for s in timeline.segments] == ["narration", "dialogue"]
+    assert backend.synthesize_calls[0] == ("Elle dit :", "ff_siwis", "fr-fr")
+    assert backend.synthesize_calls[1][0] == "Bonjour"
+    assert [s.kind for s in timeline.segments[:2]] == ["narration", "dialogue"]
+    assert [s.text for s in timeline.segments[:2]] == ["Elle dit :", "Bonjour"]
 
 
 def test_narration_lang_mutates_caller_script_in_place(tmp_path: Path) -> None:
     """enrich_script() étant appelé en place, le script de l'appelant a aussi le segment narration."""
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
-        segments=[_make_segment("seg-1", text="Bonjour", kind="dialogue")],
+        segments=[
+            _make_segment("seg-1", text="Bonjour", kind="dialogue"),
+            _make_segment("seg-sfx", text="[ドン]", kind="sfx"),
+        ],
     )
     assemble_audio(script, _FakeTTSBackend(), tmp_path / "out.opus", narration_lang="fr")
 
-    assert [s.kind for s in script.segments] == ["narration", "dialogue"]
+    assert [s.kind for s in script.segments[:2]] == ["narration", "dialogue"]
     assert script.segments[0].text == "Elle dit :"
     assert script.segments[1].text == "Bonjour"
 

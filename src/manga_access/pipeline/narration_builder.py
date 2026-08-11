@@ -51,20 +51,42 @@ def _narrator_segment(text: str, lang: str, source: NarrativeSegment) -> Narrati
     )
 
 
+def _has_following_dialogue_or_sfx_in_panel(
+    segments: list[NarrativeSegment], index: int
+) -> bool:
+    """Vrai si un segment dialogue/sfx suit `segments[index]` dans le même panel.
+
+    Cherche dans `segments` (liste d'origine de `script`, avant insertion des
+    segments de narration) à partir de `index + 1` : seuls les segments dont
+    `panel_id` correspond à celui de `segments[index]` sont considérés.
+    """
+    panel_id = segments[index].panel_id
+    return any(
+        later.panel_id == panel_id and later.kind in ("dialogue", "sfx")
+        for later in segments[index + 1 :]
+    )
+
+
 def _dialogue_segments(
-    segment: NarrativeSegment, lang: str, same_speaker_as_previous: bool
+    segment: NarrativeSegment,
+    lang: str,
+    same_speaker_as_previous: bool,
+    has_following_dialogue_or_sfx: bool,
 ) -> list[NarrativeSegment]:
     """Entoure un dialogue (inchangé) d'un segment de narration contextuel.
 
     `same_speaker_as_previous` (comparaison par voice_id — cf. docstring de
-    enrich_script pour la limite connue) supprime le segment de narration :
-    un même personnage qui enchaîne plusieurs répliques ne se voit annoncé
-    qu'une fois. fr et ja speaker inconnu : narration avant (préfixe). ja
-    speaker connu : narration après (suffixe) — "{texte}、と言った" est une
-    proposition rapportée qui suit la citation en japonais, gabarit conservé
-    tel quel depuis la Phase D plutôt que d'inventer une formulation en préfixe.
+    enrich_script pour la limite connue) et `has_following_dialogue_or_sfx`
+    (aucun dialogue/sfx après dans le même panel) suppriment chacun le
+    segment de narration : un même personnage qui enchaîne plusieurs
+    répliques ne se voit annoncé qu'une fois, et une réplique qui clôt son
+    panel (rien de vocal après elle) n'est pas non plus annoncée. fr et ja
+    speaker inconnu : narration avant (préfixe). ja speaker connu : narration
+    après (suffixe) — "{texte}、と言った" est une proposition rapportée qui
+    suit la citation en japonais, gabarit conservé tel quel depuis la
+    Phase D plutôt que d'inventer une formulation en préfixe.
     """
-    if same_speaker_as_previous:
+    if same_speaker_as_previous or not has_following_dialogue_or_sfx:
         return [segment]
 
     if segment.voice_id == VOICE_UNKNOWN:
@@ -109,8 +131,12 @@ def enrich_script(script: NarrativeScript, lang: str = "fr") -> NarrativeScript:
     (cluster_id % 3), donc deux personnages distincts dont les cluster_id
     tombent dans la même classe modulo 3 partagent un voice_id et seraient
     à tort traités comme le même locuteur — risque jugé acceptable pour
-    l'instant. SFX est toujours annoncé, à chaque occurrence (pas de suivi
-    de locuteur). narration, scene_description et thought ne sont jamais
+    l'instant. Un dialogue n'est également annoncé que s'il reste au moins
+    un autre dialogue/sfx après lui dans le même panel : une réplique
+    isolée, ou la dernière voix d'un panel, n'est jamais préfixée/suffixée
+    — y compris un panel qui n'a qu'une seule réplique. SFX est toujours
+    annoncé, à chaque occurrence (pas de suivi de locuteur, pas de condition
+    de suite). narration, scene_description et thought ne sont jamais
     modifiés ni entourés (scene_description est toujours généré en français
     par Qwen3-VL, quel que soit `lang` ; thought est hors périmètre).
 
@@ -121,12 +147,16 @@ def enrich_script(script: NarrativeScript, lang: str = "fr") -> NarrativeScript:
     if lang not in _SUPPORTED_LANGS:
         raise ValueError(f"lang non supporté : {lang!r} (attendu : {_SUPPORTED_LANGS})")
 
+    original_segments = script.segments
     enriched_segments: list[NarrativeSegment] = []
     last_dialogue_voice_id: str | None = None
-    for segment in script.segments:
+    for index, segment in enumerate(original_segments):
         if segment.kind == "dialogue":
             same_speaker = segment.voice_id == last_dialogue_voice_id
-            enriched_segments.extend(_dialogue_segments(segment, lang, same_speaker))
+            has_more = _has_following_dialogue_or_sfx_in_panel(original_segments, index)
+            enriched_segments.extend(
+                _dialogue_segments(segment, lang, same_speaker, has_more)
+            )
             last_dialogue_voice_id = segment.voice_id
         elif segment.kind == "sfx":
             enriched_segments.extend(_sfx_segments(segment, lang))

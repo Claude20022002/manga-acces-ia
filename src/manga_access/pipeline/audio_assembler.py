@@ -73,7 +73,7 @@ def assemble_audio(
     script: NarrativeScript,
     tts_backend: TTSBackend,
     output_path: Path,
-    include_scene_descriptions: bool = True,
+    include_scene_descriptions: bool = False,
     narration_lang: str | None = None,
 ) -> Timeline:
     """Synthétise et assemble tous les segments de `script` en un fichier .opus.
@@ -93,9 +93,14 @@ def assemble_audio(
     en place, donc l'appelant voit aussi le texte enrichi sur son objet
     `script` d'origine après cet appel (ex. pour un `save_transcript()`
     ultérieur sur le même script). `include_scene_descriptions` (défaut
-    True, comportement actuel préservé) contrôle si les segments
-    `scene_description` sont synthétisés : à False, ils sont ignorés comme
-    un segment à texte vide (ni audio, ni entrée dans la Timeline retournée).
+    False) contrôle si les segments `scene_description` sont synthétisés :
+    par défaut ils sont ignorés comme un segment à texte vide (ni audio, ni
+    entrée dans la Timeline retournée) — descriptions par règles jugées trop
+    répétitives à l'écoute ("Deux personnages détectés..."). Ils restent
+    cependant dans `script.segments` (jamais retirés, seulement sautés dans
+    la boucle de synthèse), donc un `save_transcript()` fait sur ce même
+    script les conserve. À True, comportement historique restauré (toujours
+    synthétisés).
     """
     if narration_lang is not None:
         script = enrich_script(script, lang=narration_lang)
