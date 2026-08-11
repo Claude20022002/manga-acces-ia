@@ -21,6 +21,18 @@ _SILENCE_BETWEEN_SEGMENTS_MS = 300
 
 _DEFAULT_LANG_BY_NARRATION_LANG = {"fr": "fr-fr", "en": "en-us"}
 
+_SPELLED_OUT_LETTERS_PATTERN = re.compile(r"([A-Za-z]\s+){3,}[A-Za-z]?")
+"""Garbage OCR épelé lettre par lettre (ex. "A B C D E"), garde-fou additionnel.
+
+Défense en profondeur, PAS le fix du bug pleine chasse (cf.
+`_normalize_fullwidth_latin` ci-dessous, qui corrige la cause racine) :
+cette regex ne matche ni un texte pleine chasse brut (hors de [A-Za-z]) ni
+sa forme post-NFKC (mot concaténé, aucun espace entre les lettres) —
+vérifié. Elle attrape un pattern différent : des lettres déjà isolées par
+des espaces, quelle qu'en soit l'origine (autre bug de nettoyage, texte
+réellement épelé dans l'OCR, etc.).
+"""
+
 
 def _detect_lang(text: str, kind: str, default_lang: str = "en-us") -> str:
     """Détecte la langue de synthèse à passer à `TTSBackend.synthesize()`.
@@ -61,6 +73,25 @@ def _voice_for_lang(voice_id: str, lang: str) -> str:
     return voice_id
 
 
+def _normalize_fullwidth_latin(text: str) -> str:
+    """Normalise NFKC les lettres/chiffres pleine chasse, caractère par caractère.
+
+    Extrait de `_clean_japanese_text()` : ce fix doit s'appliquer à TOUT
+    texte envoyé à `synthesize()`, pas seulement `lang=="ja"` — un texte
+    100% pleine-chasse-latin sans caractère japonais (ex.
+    "Ｃｈｏｎｋｅｎｅｒ...", garbage OCR de couverture) est détecté
+    `lang="en-us"`/`"fr-fr"` par `_detect_lang()`, prenait la branche
+    `else` de `assemble_audio()` et ne passait jamais par
+    `_clean_japanese_text()` -> partait brut vers Kokoro -> épelé lettre
+    par lettre par le G2P espeak, qui ne reconnaît pas les points de code
+    pleine chasse. Caractère par caractère (`ch.isalnum()`), pas sur toute
+    la chaîne : cf. docstring de `_clean_japanese_text()` pour la
+    ponctuation, qui a elle aussi une forme NFKC et ne doit pas être
+    touchée ici.
+    """
+    return "".join(unicodedata.normalize("NFKC", ch) if ch.isalnum() else ch for ch in text)
+
+
 def _clean_japanese_text(text: str) -> str:
     """Nettoie le texte japonais OCR avant synthèse TTS.
 
@@ -68,18 +99,11 @@ def _clean_japanese_text(text: str) -> str:
     réduit les répétitions de ponctuation ('！！' -> '！', '？？' -> '？')
     avant passage au G2P de Kokoro (misaki) — cas réels observés dans
     data/outputs/benchmark_v6/transcripts/2-1.txt. Normalise d'abord en
-    NFKC les lettres/chiffres pleine chasse (fullwidth latin, ex.
-    "Ｗｏｒｄｏｗｓ") — sans ça, Kokoro les épelle lettre par lettre au lieu de
-    lire le mot, et le texte inutilement long déclenche la troncature à 510
-    phonèmes. Caractère par caractère (`ch.isalnum()`), pas sur toute la
-    chaîne : ponctuation pleine chasse ("．", "！", "？") a aussi une forme
-    NFKC (ASCII), ce qui casserait le nettoyage ci-dessous si on
-    normalisait tout d'un coup (il cherche spécifiquement ces caractères
-    pleine chasse).
+    NFKC les lettres/chiffres pleine chasse via `_normalize_fullwidth_latin()`
+    — sans ça, Kokoro les épelle lettre par lettre au lieu de lire le mot,
+    et le texte inutilement long déclenche la troncature à 510 phonèmes.
     """
-    text = "".join(
-        unicodedata.normalize("NFKC", ch) if ch.isalnum() else ch for ch in text
-    )
+    text = _normalize_fullwidth_latin(text)
     text = text.replace("．", "。")
     text = re.sub(r"[。、]{2,}", "、", text)
     text = re.sub(r"！{2,}", "！", text)
@@ -152,7 +176,15 @@ def assemble_audio(
                 )
                 continue
         else:
-            text_to_synth = text_stripped
+            text_to_synth = _normalize_fullwidth_latin(text_stripped)
+
+        if _SPELLED_OUT_LETTERS_PATTERN.fullmatch(text_to_synth):
+            logger.warning(
+                "Segment ignoré (texte ressemble à du garbage OCR épelé lettre par "
+                f"lettre) : {segment.id!r} texte={text_to_synth!r}"
+            )
+            continue
+
         audio_bytes = tts_backend.synthesize(text_to_synth, voice, lang=lang)
         audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
 

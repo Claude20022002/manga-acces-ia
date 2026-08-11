@@ -13,6 +13,7 @@ from manga_access.backends.base import TTSBackend
 from manga_access.pipeline.audio_assembler import (
     _clean_japanese_text,
     _detect_lang,
+    _normalize_fullwidth_latin,
     _voice_for_lang,
     assemble_audio,
     save_timeline,
@@ -93,6 +94,71 @@ def test_clean_japanese_text_still_dedupes_punctuation_after_nfkc() -> None:
     """La normalisation NFKC n'empêche pas la déduplication de ponctuation existante."""
     assert _clean_japanese_text("！！") == "！"
     assert _clean_japanese_text("？？") == "？"
+
+
+def test_normalize_fullwidth_latin_normalizes_pure_latin_garbage() -> None:
+    """Cas rapporté (point 3) : texte 100% pleine-chasse-latin sans japonais -> mot ASCII concaténé."""
+    assert (
+        _normalize_fullwidth_latin("Ｃｈｏｎｋｅｎｅｒｅｘｐｉｎｓｔｉｎｅｔｔｈｅｌｖｏｒｄｅｒ")
+        == "Chonkenerexpinstinetthelvorder"
+    )
+
+
+def test_normalize_fullwidth_latin_leaves_punctuation_untouched() -> None:
+    """Ne touche pas la ponctuation pleine chasse (pas son rôle, cf. _clean_japanese_text)."""
+    assert _normalize_fullwidth_latin("．！？") == "．！？"
+
+
+def test_non_japanese_dialogue_with_fullwidth_latin_is_normalized_before_synthesis(
+    tmp_path: Path,
+) -> None:
+    """Un dialogue pleine-chasse-latin pur (lang != "ja") est normalisé avant synthesize(), pas brut.
+
+    Bug corrigé (point 3) : ce texte est détecté "en-us"/"fr-fr" par
+    _detect_lang() (aucun caractère japonais), prenait jusqu'ici la branche
+    else sans jamais passer par une normalisation NFKC -> partait brut vers
+    Kokoro -> épelé lettre par lettre par espeak.
+    """
+    output_path = tmp_path / "garbage.opus"
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-1", text="Ｗｏｒｄｏｗｓ")],
+    )
+    backend = _FakeTTSBackend()
+
+    assemble_audio(script, backend, output_path)
+
+    assert backend.synthesize_calls[0][0] == "Wordows"
+
+
+def test_spelled_out_letters_guard_skips_segment(tmp_path: Path) -> None:
+    """Un texte qui ressemble à du garbage OCR épelé lettre par lettre (A B C D) est sauté."""
+    output_path = tmp_path / "spelled.opus"
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-1", text="A B C D")],
+    )
+    backend = _FakeTTSBackend()
+
+    timeline = assemble_audio(script, backend, output_path)
+
+    assert timeline.segments == []
+    assert backend.synthesize_calls == []
+
+
+def test_spelled_out_letters_guard_does_not_flag_normal_short_dialogue(tmp_path: Path) -> None:
+    """Un dialogue court normal (pas de garbage épelé) n'est pas faussement sauté par le garde-fou."""
+    output_path = tmp_path / "normal.opus"
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-1", text="Oh no")],
+    )
+    backend = _FakeTTSBackend()
+
+    timeline = assemble_audio(script, backend, output_path)
+
+    assert len(timeline.segments) == 1
+    assert len(backend.synthesize_calls) == 1
 
 
 def test_ja_segment_with_real_japanese_text_is_synthesized_normally(tmp_path: Path) -> None:
