@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from PIL import Image
 
-from manga_access.backends.base import OCRBackend, SceneDescriptionBackend, StructureBackend
+from manga_access.backends.base import (
+    OCRBackend,
+    SceneDescriptionBackend,
+    StructureBackend,
+)
 from manga_access.pipeline.scene_descriptor import describe_panel
 from manga_access.schemas.manga_page import BBox, Character, MangaPage, Panel
 
@@ -40,6 +45,88 @@ def _full_image_bbox(image: Image.Image) -> BBox:
     return (0.0, 0.0, float(w), float(h))
 
 
+def _build_panels(detections: dict[str, Any], width: int, height: int) -> list[Panel]:
+    """Construit les panels d'une page depuis les détections brutes de structuration."""
+    return [
+        Panel(
+            id=f"panel-{i}",
+            order=i,
+            bbox=_clip_bbox(tuple(float(v) for v in bbox), width, height),
+        )
+        for i, bbox in enumerate(detections.get("panels", []))
+    ]
+
+
+def _run_ocr_for_page(
+    image: Image.Image,
+    detections: dict[str, Any],
+    panels: list[Panel],
+    ocr_backend: OCRBackend,
+) -> None:
+    """Reconnaît le texte de chaque bbox détectée et l'attache au panel correspondant.
+
+    `ocr_backend` doit déjà être chargé (load() appelé par l'appelant) —
+    cette fonction ne gère pas le cycle de vie du backend, pour permettre à
+    un appelant chapitre-entier de ne charger le modèle qu'une seule fois.
+    """
+    width, height = image.size
+    text_bboxes = [
+        _clip_bbox(tuple(float(v) for v in bbox), width, height)
+        for bbox in detections.get("texts", [])
+    ]
+    logger.info(f"Magiv2 : {len(text_bboxes)} bbox(es) texte brut(es) détectée(s)")
+
+    text_to_char_idx = dict(detections.get("text_character_associations", []))
+    character_cluster_labels = detections.get("character_cluster_labels", [])
+
+    for text_idx, text_bbox in enumerate(text_bboxes):
+        element = ocr_backend.recognize(image, text_bbox)
+        char_idx = text_to_char_idx.get(text_idx)
+        if char_idx is not None:
+            element.speaker_id = f"char-{character_cluster_labels[char_idx]}"
+        panel = _find_panel_for_text(panels, text_bbox)
+        if panel is not None:
+            panel.elements.append(element)
+        else:
+            cx = (text_bbox[0] + text_bbox[2]) / 2
+            cy = (text_bbox[1] + text_bbox[3]) / 2
+            logger.warning(
+                f"Texte hors panel ignoré : centre=({cx:.1f}, {cy:.1f}) "
+                f"bbox={tuple(round(v, 1) for v in text_bbox)}"
+            )
+
+
+def _build_characters(
+    detections: dict[str, Any], character_names: list[str | None] | None = None
+) -> list[Character]:
+    """Construit la liste des personnages d'une page depuis les détections brutes.
+
+    `character_names`, si fourni, est aligné sur `detections["characters"]`
+    (une entrée par bbox de personnage détecté, pas par cluster) — c'est le
+    format retourné par `StructureBackend.detect_chapter` (clé
+    "character_names"). Les contraintes must-link de l'assignation
+    chapitre-entière garantissent que tous les indices d'un même
+    `cluster_id` partagent déjà le même nom : un seul lookup par cluster
+    suffit, pas de vote majoritaire nécessaire.
+    """
+    cluster_labels = detections.get("character_cluster_labels", [])
+
+    name_by_cluster: dict[int, str | None] = {}
+    if character_names is not None:
+        for cluster_id, name in zip(cluster_labels, character_names):
+            name_by_cluster[cluster_id] = None if name is None or name == "Other" else name
+
+    return [
+        Character(
+            id=f"char-{cluster_id}",
+            voice_id=f"voice_{cluster_id}",
+            name=name_by_cluster.get(cluster_id),
+            cluster_confidence=1.0,  # Magiv2 ne fournit pas de score de confiance par cluster
+        )
+        for cluster_id in sorted(set(cluster_labels))
+    ]
+
+
 class PageProcessor:
     """Orchestration minimale d'une planche : structure -> OCR -> MangaPage."""
 
@@ -62,42 +149,13 @@ class PageProcessor:
         self._structure_backend.unload()
 
         width, height = image.size
-        panels = [
-            Panel(
-                id=f"panel-{i}",
-                order=i,
-                bbox=_clip_bbox(tuple(float(v) for v in bbox), width, height),
-            )
-            for i, bbox in enumerate(detections.get("panels", []))
-        ]
-        text_bboxes = [
-            _clip_bbox(tuple(float(v) for v in bbox), width, height)
-            for bbox in detections.get("texts", [])
-        ]
-        logger.info(f"Magiv2 : {len(text_bboxes)} bbox(es) texte brut(es) détectée(s)")
-
-        text_to_char_idx = dict(detections.get("text_character_associations", []))
-        character_cluster_labels = detections.get("character_cluster_labels", [])
+        panels = _build_panels(detections, width, height)
 
         self._ocr_backend.load()
-        for text_idx, text_bbox in enumerate(text_bboxes):
-            element = self._ocr_backend.recognize(image, text_bbox)
-            char_idx = text_to_char_idx.get(text_idx)
-            if char_idx is not None:
-                element.speaker_id = f"char-{character_cluster_labels[char_idx]}"
-            panel = _find_panel_for_text(panels, text_bbox)
-            if panel is not None:
-                panel.elements.append(element)
-            else:
-                cx = (text_bbox[0] + text_bbox[2]) / 2
-                cy = (text_bbox[1] + text_bbox[3]) / 2
-                logger.warning(
-                    f"Texte hors panel ignoré : centre=({cx:.1f}, {cy:.1f}) "
-                    f"bbox={tuple(round(v, 1) for v in text_bbox)}"
-                )
+        _run_ocr_for_page(image, detections, panels, self._ocr_backend)
         self._ocr_backend.unload()
 
-        characters = self._build_characters(detections)
+        characters = _build_characters(detections)
         if self._vision_backend is not None:
             self._vision_backend.load()
             description = self._vision_backend.describe(image, _full_image_bbox(image))
@@ -114,16 +172,3 @@ class PageProcessor:
             characters=characters,
             panels=panels,
         )
-
-    @staticmethod
-    def _build_characters(detections: dict) -> list[Character]:
-        cluster_labels = detections.get("character_cluster_labels", [])
-        return [
-            Character(
-                id=f"char-{cluster_id}",
-                voice_id=f"voice_{cluster_id}",
-                name=None,
-                cluster_confidence=1.0,  # Magiv2 ne fournit pas de score de confiance par cluster
-            )
-            for cluster_id in sorted(set(cluster_labels))
-        ]

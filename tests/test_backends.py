@@ -72,7 +72,7 @@ class _PartialBackend(OCRBackend, TTSBackend):
 
 
 class _FullStructureBackend(StructureBackend):
-    """Implémente les trois méthodes abstraites de StructureBackend."""
+    """Implémente les quatre méthodes abstraites de StructureBackend."""
 
     def load(self) -> None:
         pass
@@ -82,6 +82,11 @@ class _FullStructureBackend(StructureBackend):
 
     def detect(self, image: np.ndarray) -> dict[str, Any]:
         return {"panels": [], "texts": []}
+
+    def detect_chapter(
+        self, images: list[np.ndarray], character_bank: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        return [{"panels": [], "texts": []} for _ in images]
 
 
 class _PartialStructureBackend(StructureBackend):
