@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 
-def load_character_bank(json_path: Path) -> dict[str, Any]:
+def load_character_bank(json_path: str | Path) -> dict[str, Any]:
     """Charge une character_bank depuis `json_path` au format `{"images": np.ndarray[], "names": str[]}`.
 
     Le fichier JSON sur disque contient des chemins d'images (clé
@@ -20,6 +20,7 @@ def load_character_bank(json_path: Path) -> dict[str, Any]:
     `StructureBackend.detect_chapter` / `ChapterProcessor.process`, avec les
     images chargées en `np.ndarray` RGB.
     """
+    json_path = Path(json_path)
     data = json.loads(json_path.read_text(encoding="utf-8"))
     names: list[str] = data["names"]
     image_paths: list[str] = data["image_paths"]

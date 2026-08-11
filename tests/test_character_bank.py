@@ -49,6 +49,19 @@ def test_load_character_bank_resolves_relative_paths_from_json_dir(tmp_path: Pat
     assert len(bank["images"]) == 1
 
 
+def test_load_character_bank_accepts_str_path(tmp_path: Path) -> None:
+    """json_path accepte un str, pas seulement un Path (usage direct depuis un script/notebook)."""
+    _make_reference_image(tmp_path / "naruto.jpg")
+    bank_path = tmp_path / "bank.json"
+    bank_path.write_text(
+        json.dumps({"names": ["Naruto"], "image_paths": ["naruto.jpg"]}), encoding="utf-8"
+    )
+
+    bank = load_character_bank(str(bank_path))
+
+    assert bank["names"] == ["Naruto"]
+
+
 def test_load_character_bank_mismatched_lengths_raises(tmp_path: Path) -> None:
     """Un nombre de noms différent du nombre d'images lève ValueError."""
     bank_path = tmp_path / "bank.json"
