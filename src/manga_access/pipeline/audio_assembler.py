@@ -11,6 +11,7 @@ from loguru import logger
 from pydub import AudioSegment
 
 from manga_access.backends.base import TTSBackend
+from manga_access.pipeline.narration_builder import enrich_script
 from manga_access.schemas.narrative_script import NarrativeScript
 from manga_access.schemas.timeline import Timeline, TimelineSegment
 
@@ -65,7 +66,13 @@ def _clean_japanese_text(text: str) -> str:
     return text.strip()
 
 
-def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path: Path) -> Timeline:
+def assemble_audio(
+    script: NarrativeScript,
+    tts_backend: TTSBackend,
+    output_path: Path,
+    include_scene_descriptions: bool = True,
+    narration_lang: str | None = None,
+) -> Timeline:
     """Synthétise et assemble tous les segments de `script` en un fichier .opus.
 
     Charge `tts_backend`, synthétise chaque segment dans l'ordre (300ms de
@@ -75,7 +82,21 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
     segment audible, alignés sur le fichier .opus exporté) — `start_ms` est
     le point où la parole du segment commence réellement, après insertion
     du silence inter-segments.
+
+    Si `narration_lang` est fourni (ex. "fr"), `script` est enrichi via
+    `enrich_script()` (narration_builder.py) avant toute synthèse : le texte
+    enrichi (préfixes narratifs contextuels) est ce qui est synthétisé et ce
+    qui apparaît dans la Timeline retournée. `enrich_script()` mute `script`
+    en place, donc l'appelant voit aussi le texte enrichi sur son objet
+    `script` d'origine après cet appel (ex. pour un `save_transcript()`
+    ultérieur sur le même script). `include_scene_descriptions` (défaut
+    True, comportement actuel préservé) contrôle si les segments
+    `scene_description` sont synthétisés : à False, ils sont ignorés comme
+    un segment à texte vide (ni audio, ni entrée dans la Timeline retournée).
     """
+    if narration_lang is not None:
+        script = enrich_script(script, lang=narration_lang)
+
     start = time.perf_counter()
     tts_backend.load()
 
@@ -84,6 +105,8 @@ def assemble_audio(script: NarrativeScript, tts_backend: TTSBackend, output_path
     timeline_segments: list[TimelineSegment] = []
 
     for segment in script.segments:
+        if segment.kind == "scene_description" and not include_scene_descriptions:
+            continue
         text_stripped = segment.text.strip()
         if not text_stripped:
             logger.warning(f"Segment ignoré (texte vide) : {segment.id!r}")

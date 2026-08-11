@@ -224,6 +224,75 @@ def test_timeline_no_leading_silence_after_skipped_segment(tmp_path: Path) -> No
     assert timeline.segments[0].end_ms == 100
 
 
+def test_include_scene_descriptions_default_true_synthesizes(tmp_path: Path) -> None:
+    """Par défaut (include_scene_descriptions non précisé), scene_description est synthétisé."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-desc", text="Une rue calme.", kind="scene_description")],
+    )
+    backend = _FakeTTSBackend()
+    timeline = assemble_audio(script, backend, tmp_path / "out.opus")
+
+    assert len(backend.synthesize_calls) == 1
+    assert [s.id for s in timeline.segments] == ["seg-desc"]
+
+
+def test_include_scene_descriptions_false_excludes_from_timeline_and_synthesis(
+    tmp_path: Path,
+) -> None:
+    """include_scene_descriptions=False : scene_description ignoré comme un segment vide."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[
+            _make_segment("seg-desc", text="Une rue calme.", kind="scene_description"),
+            _make_segment("seg-real", text="Bonjour", kind="dialogue"),
+        ],
+    )
+    backend = _FakeTTSBackend()
+    timeline = assemble_audio(
+        script, backend, tmp_path / "out.opus", include_scene_descriptions=False
+    )
+
+    assert [s.id for s in timeline.segments] == ["seg-real"]
+    assert all(call[0] != "Une rue calme." for call in backend.synthesize_calls)
+
+
+def test_narration_lang_none_leaves_text_unchanged(tmp_path: Path) -> None:
+    """narration_lang=None (défaut) : aucun enrichissement, texte synthétisé tel quel."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-1", text="Bonjour", kind="dialogue")],
+    )
+    backend = _FakeTTSBackend()
+    assemble_audio(script, backend, tmp_path / "out.opus")
+
+    assert backend.synthesize_calls[0][0] == "Bonjour"
+
+
+def test_narration_lang_enriches_text_before_synthesis(tmp_path: Path) -> None:
+    """narration_lang="fr" : le texte synthétisé et la Timeline portent le préfixe enrichi."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-1", text="Bonjour", kind="dialogue")],
+    )
+    backend = _FakeTTSBackend()
+    timeline = assemble_audio(script, backend, tmp_path / "out.opus", narration_lang="fr")
+
+    assert backend.synthesize_calls[0][0] == "Elle dit : Bonjour"
+    assert timeline.segments[0].text == "Elle dit : Bonjour"
+
+
+def test_narration_lang_mutates_caller_script_in_place(tmp_path: Path) -> None:
+    """enrich_script() étant appelé en place, le script de l'appelant est aussi enrichi."""
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-1", text="Bonjour", kind="dialogue")],
+    )
+    assemble_audio(script, _FakeTTSBackend(), tmp_path / "out.opus", narration_lang="fr")
+
+    assert script.segments[0].text == "Elle dit : Bonjour"
+
+
 def test_save_timeline_writes_json(tmp_path: Path) -> None:
     """save_timeline() écrit un JSON relisible via Timeline.from_json()."""
     timeline = Timeline(
