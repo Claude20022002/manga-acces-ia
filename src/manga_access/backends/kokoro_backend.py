@@ -77,7 +77,11 @@ class KokoroBackend(TTSBackend):
                 samples, sample_rate = self._model.create(phonemes, voice=voice_id, is_phonemes=True)
             else:
                 samples, sample_rate = self._model.create(text, voice=voice_id, lang=lang)
-        except ValueError:
+        except (ValueError, AssertionError):
+            # AssertionError : misaki/ja.py JAG2P lève cette exception (pas de
+            # retour anormal) quand pyopenjtalk et pron2moras() désaccordent
+            # sur le nombre de moras pour certains motifs kana (ex. 'ヒィッ',
+            # petit ィ + っ géminé) — même repli silence que ValueError.
             logger.warning(f"Kokoro : texte non phonémisable, silence retourné : {text!r}")
             sample_rate = SAMPLE_RATE
             samples = np.zeros(int(sample_rate * 0.1), dtype=np.float32)
