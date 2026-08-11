@@ -10,6 +10,7 @@ from pydub import AudioSegment
 
 from manga_access.backends.base import TTSBackend
 from manga_access.pipeline.audio_assembler import (
+    _clean_japanese_text,
     _detect_lang,
     _voice_for_lang,
     assemble_audio,
@@ -70,6 +71,27 @@ def _make_script(n_segments: int) -> NarrativeScript:
         source={"file": "test.jpg", "page_index": 0},
         segments=[_make_segment(f"seg-{i}") for i in range(n_segments)],
     )
+
+
+def test_clean_japanese_text_normalizes_fullwidth_latin_words() -> None:
+    """Texte OCR en fullwidth latin (pleine chasse) -> mot ASCII normal, pas épelé lettre par lettre."""
+    assert _clean_japanese_text("Ｗｏｒｄｏｗｓ") == "Wordows"
+
+
+def test_clean_japanese_text_normalizes_fullwidth_latin_acronym() -> None:
+    """Cas rapporté : un acronyme entièrement en fullwidth se normalise en ASCII standard."""
+    assert _clean_japanese_text("ＦＩＲＳＴＣＯＮＴＡＣＴ") == "FIRSTCONTACT"
+
+
+def test_clean_japanese_text_still_normalizes_ellipsis_after_nfkc() -> None:
+    """La normalisation NFKC n'empêche pas le nettoyage existant (points de suspension pleine chasse)."""
+    assert _clean_japanese_text("．．．") == "、"
+
+
+def test_clean_japanese_text_still_dedupes_punctuation_after_nfkc() -> None:
+    """La normalisation NFKC n'empêche pas la déduplication de ponctuation existante."""
+    assert _clean_japanese_text("！！") == "！"
+    assert _clean_japanese_text("？？") == "？"
 
 
 def test_empty_script(tmp_path: Path) -> None:
