@@ -69,7 +69,9 @@ def _character_bank_for_title(title: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-async def start_job(manga_title: str, pages: int | None, narration_lang: str) -> Job:
+async def start_job(
+    manga_title: str, pages: int | None, narration_lang: str, start_page: int = 0
+) -> Job:
     """Valide `manga_title`, crée un job et lance scripts/demo.py dessus en sous-processus.
 
     Le sous-processus (pas d'appel direct à ChapterProcessor) isole la RAM
@@ -80,7 +82,7 @@ async def start_job(manga_title: str, pages: int | None, narration_lang: str) ->
     timeline corresponde à la bonne image servie par `/api/page`.
     """
     images_dir = resolve_manga_dir(manga_title)
-    image_paths = find_images(images_dir, limit=pages)
+    image_paths = find_images(images_dir, limit=pages, start=start_page)
 
     job_id = uuid.uuid4().hex
     output_dir = _OUTPUT_ROOT / job_id
@@ -104,6 +106,8 @@ async def start_job(manga_title: str, pages: int | None, narration_lang: str) ->
         str(output_dir),
         "--narration-lang",
         narration_lang,
+        "--start-page",
+        str(start_page),
     ]
     if pages is not None:
         command += ["--pages", str(pages)]

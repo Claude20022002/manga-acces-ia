@@ -135,6 +135,12 @@ def assemble_audio(
         voice = _voice_for_lang(segment.voice_id, lang)
         if lang == "ja":
             text_to_synth = _clean_japanese_text(text_stripped)
+            if not _JAPANESE_CHAR_PATTERN.search(text_to_synth):
+                logger.warning(
+                    "Segment ignoré (ja détecté mais aucun caractère japonais après "
+                    f"nettoyage) : {segment.id!r} texte nettoyé={text_to_synth!r}"
+                )
+                continue
         else:
             text_to_synth = text_stripped
         audio_bytes = tts_backend.synthesize(text_to_synth, voice, lang=lang)

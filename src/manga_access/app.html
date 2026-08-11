@@ -271,8 +271,22 @@
   </div>
 
   <div class="file-picker">
-    <label for="pages-input">Nombre de pages (optionnel, laisser vide pour tout le manga)</label>
-    <input type="number" id="pages-input" min="1" value="3">
+    <label for="start-page-input">Page de début</label>
+    <input type="number" id="start-page-input" min="0" value="1">
+  </div>
+
+  <div class="file-picker">
+    <label for="pages-input">Nombre de pages</label>
+    <input type="number" id="pages-input" min="1" max="20" value="5">
+  </div>
+
+  <div class="file-picker">
+    <label for="lang-select">Langue de sortie</label>
+    <select id="lang-select">
+      <option value="ja">Japonais (ja)</option>
+      <option value="fr" selected>Français (fr)</option>
+      <option value="en">Anglais (en)</option>
+    </select>
   </div>
 
   <button id="btn-produce" type="button" disabled>Produire l'audio</button>
@@ -368,7 +382,9 @@
 
   const audio = document.getElementById("audio");
   const mangaSelect = document.getElementById("manga-select");
+  const startPageInput = document.getElementById("start-page-input");
   const pagesInput = document.getElementById("pages-input");
+  const langSelect = document.getElementById("lang-select");
   const btnProduce = document.getElementById("btn-produce");
   const statusMessage = document.getElementById("status-message");
   const progressBar = document.getElementById("progress-bar");
@@ -726,6 +742,9 @@
     const mangaTitle = mangaSelect.value;
     if (!mangaTitle) return;
     const pagesValue = pagesInput.value.trim() === "" ? null : parseInt(pagesInput.value, 10);
+    // "Page de début" est affichée 1-indexée (page 1 = première page) ;
+    // l'API attend un offset 0-indexé, cohérent avec page_index partout ailleurs.
+    const startPageValue = Math.max(0, (parseInt(startPageInput.value, 10) || 1) - 1);
 
     if (currentEventSource) {
       currentEventSource.close();
@@ -748,7 +767,8 @@
         body: JSON.stringify({
           manga_title: mangaTitle,
           pages: pagesValue,
-          narration_lang: "fr",
+          narration_lang: langSelect.value,
+          start_page: startPageValue,
         }),
       });
       if (!response.ok) {

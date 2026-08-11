@@ -128,7 +128,9 @@ def test_manga_pages_unknown_title_404(client: TestClient, manga_root: Path) -> 
 def test_produce_returns_job_id(
     client: TestClient, manga_root: Path, output_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_start_job(manga_title: str, pages: int | None, narration_lang: str) -> jobs_module.Job:
+    async def fake_start_job(
+        manga_title: str, pages: int | None, narration_lang: str, start_page: int = 0
+    ) -> jobs_module.Job:
         return _make_job("fake-job-id", output_root / "fake-job-id", manga_title=manga_title, status="running")
 
     monkeypatch.setattr(jobs_module, "start_job", fake_start_job)
@@ -137,6 +139,28 @@ def test_produce_returns_job_id(
 
     assert response.status_code == 200
     assert response.json() == {"job_id": "fake-job-id"}
+
+
+def test_produce_passes_start_page_through_to_start_job(
+    client: TestClient, manga_root: Path, output_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """start_page du corps de la requête est bien transmis à jobs.start_job, pas ignoré."""
+    received: dict[str, object] = {}
+
+    async def fake_start_job(
+        manga_title: str, pages: int | None, narration_lang: str, start_page: int = 0
+    ) -> jobs_module.Job:
+        received["start_page"] = start_page
+        return _make_job("fake-job-id", output_root / "fake-job-id", manga_title=manga_title, status="running")
+
+    monkeypatch.setattr(jobs_module, "start_job", fake_start_job)
+
+    response = client.post(
+        "/api/produce", json={"manga_title": "TestManga", "pages": 5, "start_page": 9}
+    )
+
+    assert response.status_code == 200
+    assert received["start_page"] == 9
 
 
 def test_produce_unknown_manga_returns_400(client: TestClient, manga_root: Path) -> None:

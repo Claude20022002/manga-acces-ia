@@ -7,8 +7,8 @@ from pathlib import Path
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 
-def find_images(folder: Path, limit: int | None = None) -> list[Path]:
-    """Retourne les images de `folder`, triées par nom (ordre de lecture), tronquées à `limit`.
+def find_images(folder: Path, limit: int | None = None, start: int = 0) -> list[Path]:
+    """Retourne les images de `folder`, triées par nom (ordre de lecture), à partir de `start`, tronquées à `limit`.
 
     Tri alphabétique déterministe : c'est ce que `demo.py` (CLI) et
     `api/jobs.py` (page_index -> image servie) doivent utiliser tous les
@@ -19,4 +19,7 @@ def find_images(folder: Path, limit: int | None = None) -> list[Path]:
     images = sorted(p for p in folder.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
     if not images:
         raise ValueError(f"aucune image trouvée dans {folder}")
+    images = images[start:]
+    if not images:
+        raise ValueError(f"start={start} dépasse le nombre de pages disponibles dans {folder}")
     return images[:limit] if limit is not None else images

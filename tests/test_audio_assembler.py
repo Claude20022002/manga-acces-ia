@@ -6,6 +6,7 @@ import io
 import wave
 from pathlib import Path
 
+import pytest
 from pydub import AudioSegment
 
 from manga_access.backends.base import TTSBackend
@@ -92,6 +93,50 @@ def test_clean_japanese_text_still_dedupes_punctuation_after_nfkc() -> None:
     """La normalisation NFKC n'empêche pas la déduplication de ponctuation existante."""
     assert _clean_japanese_text("！！") == "！"
     assert _clean_japanese_text("？？") == "？"
+
+
+def test_ja_segment_with_real_japanese_text_is_synthesized_normally(tmp_path: Path) -> None:
+    """Un segment japonais légitime (kana réels après nettoyage) n'est pas sauté par le garde-fou."""
+    output_path = tmp_path / "ja.opus"
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-1", text="おはよう")],
+    )
+    backend = _FakeTTSBackend()
+
+    timeline = assemble_audio(script, backend, output_path)
+
+    assert len(timeline.segments) == 1
+    assert len(backend.synthesize_calls) == 1
+
+
+def test_ja_segment_with_no_japanese_chars_after_cleaning_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """lang détecté 'ja' mais texte nettoyé sans caractère japonais -> segment sauté, pas synthétisé.
+
+    _clean_japanese_text() actuel ne supprime jamais un caractère japonais
+    (NFKC le recompose au pire) donc ce cas n'est pas atteignable avec
+    l'implémentation réelle aujourd'hui — on le simule via monkeypatch pour
+    tester le garde-fou lui-même (protection contre un futur changement de
+    _clean_japanese_text, ou un cas d'OCR non anticipé).
+    """
+    monkeypatch.setattr(
+        "manga_access.pipeline.audio_assembler._clean_japanese_text",
+        lambda text: "Letter FF43",
+    )
+    output_path = tmp_path / "skip.opus"
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        # texte brut avec un vrai caractère japonais pour déclencher lang="ja" via _detect_lang
+        segments=[_make_segment("seg-1", text="レターFF43")],
+    )
+    backend = _FakeTTSBackend()
+
+    timeline = assemble_audio(script, backend, output_path)
+
+    assert timeline.segments == []
+    assert backend.synthesize_calls == []
 
 
 def test_empty_script(tmp_path: Path) -> None:

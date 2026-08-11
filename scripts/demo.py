@@ -12,7 +12,7 @@ Usage:
         [--character-bank data/character_banks/mon_manga.json] \\
         [--output-dir data/outputs/demo] \\
         [--narration-lang fr] \\
-        [--pages 3]
+        [--pages 3] [--start-page 0]
 """
 
 from __future__ import annotations
@@ -74,9 +74,10 @@ def run_demo(
     character_bank_path: Path | None,
     narration_lang: str,
     pages: int | None,
+    start_page: int,
 ) -> None:
     """Exécute le pipeline complet sur `images_dir`, écrit les 3 fichiers de sortie dans `output_dir`."""
-    image_paths = find_images(images_dir, limit=pages)
+    image_paths = find_images(images_dir, limit=pages, start=start_page)
     logger.info(f"{len(image_paths)} page(s) trouvée(s) dans {images_dir}")
 
     character_bank = None
@@ -139,6 +140,12 @@ def main() -> None:
     parser.add_argument(
         "--pages", type=int, default=None, help="Limite le nombre de pages traitées (défaut: toutes)"
     )
+    parser.add_argument(
+        "--start-page",
+        type=int,
+        default=0,
+        help="Index de la première page à traiter, 0-indexé (défaut: 0)",
+    )
     args = parser.parse_args()
 
     try:
@@ -148,6 +155,7 @@ def main() -> None:
             args.character_bank,
             args.narration_lang,
             args.pages,
+            args.start_page,
         )
     except (ValueError, OSError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)

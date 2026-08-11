@@ -70,3 +70,41 @@ def test_find_images_empty_folder_raises(tmp_path: Path) -> None:
     """Un dossier sans image lève ValueError plutôt que de retourner silencieusement []."""
     with pytest.raises(ValueError, match="aucune image"):
         find_images(tmp_path)
+
+
+def test_find_images_start_skips_leading_pages(tmp_path: Path) -> None:
+    """start=N saute les N premières pages (après tri), garde le reste."""
+    for name in ["000.jpg", "001.jpg", "002.jpg", "003.jpg"]:
+        _touch(tmp_path / name)
+
+    result = find_images(tmp_path, start=2)
+
+    assert [p.name for p in result] == ["002.jpg", "003.jpg"]
+
+
+def test_find_images_start_and_limit_combine(tmp_path: Path) -> None:
+    """start et limit se combinent : limit est un COMPTE à partir de start, pas un index de fin absolu."""
+    for name in ["000.jpg", "001.jpg", "002.jpg", "003.jpg", "004.jpg"]:
+        _touch(tmp_path / name)
+
+    result = find_images(tmp_path, start=1, limit=2)
+
+    assert [p.name for p in result] == ["001.jpg", "002.jpg"]
+
+
+def test_find_images_start_zero_is_noop(tmp_path: Path) -> None:
+    """start=0 (défaut) ne change rien au comportement existant."""
+    for name in ["000.jpg", "001.jpg"]:
+        _touch(tmp_path / name)
+
+    result = find_images(tmp_path, start=0)
+
+    assert [p.name for p in result] == ["000.jpg", "001.jpg"]
+
+
+def test_find_images_start_beyond_available_pages_raises(tmp_path: Path) -> None:
+    """start >= nombre de pages disponibles lève ValueError plutôt que de retourner []."""
+    _touch(tmp_path / "000.jpg")
+
+    with pytest.raises(ValueError, match="start=5"):
+        find_images(tmp_path, start=5)
