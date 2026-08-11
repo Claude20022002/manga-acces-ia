@@ -29,7 +29,7 @@
   }
 
   main {
-    max-width: 40rem;
+    max-width: 56rem;
     margin: 0 auto;
   }
 
@@ -104,10 +104,45 @@
     background: #f1f2f4;
   }
 
+  .layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    align-items: flex-start;
+  }
+
+  .manga-page-figure {
+    flex: 1 1 18rem;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 0.6rem;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .manga-page-figure img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    border-radius: 0.3rem;
+    background: var(--color-disabled-bg);
+    min-height: 8rem;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+  }
+
+  .page-announcement {
+    margin: 0.75rem 0 0;
+    color: var(--color-muted);
+  }
+
   .player {
     border: 1px solid var(--color-border);
     border-radius: 0.6rem;
     padding: 1rem;
+    flex: 1 1 18rem;
+    margin: 0;
   }
 
   .controls-row,
@@ -209,6 +244,11 @@
     <input type="file" id="timeline-input" accept=".json,application/json">
   </div>
 
+  <div class="file-picker">
+    <label for="manga-images-input">Charger les pages manga (images)</label>
+    <input type="file" id="manga-images-input" accept="image/*" multiple>
+  </div>
+
   <p id="file-title" class="file-title">Aucun fichier chargé</p>
   <p id="status-message" role="status"></p>
 
@@ -221,15 +261,27 @@
       <li><kbd>[</kbd> / <kbd>]</kbd> — Diminuer / augmenter la vitesse (0.5x à 2.0x)</li>
       <li><kbd>Origine (Home)</kbd> — Retour au début</li>
       <li><kbd>M</kbd> — Couper / réactiver le son</li>
+      <li><kbd>P</kbd> / <kbd>N</kbd> — Page manga précédente / suivante (indépendant de l'audio)</li>
     </ul>
   </details>
 
-  <section
-    id="player"
-    class="player"
-    role="application"
-    aria-label="Lecteur audio manga accessible, raccourcis clavier actifs"
-  >
+  <div class="layout">
+    <figure
+      id="manga-page-figure"
+      class="manga-page-figure"
+      aria-label="Page manga en cours"
+      hidden
+    >
+      <img id="manga-page" alt="">
+      <p id="page-announcement" class="page-announcement" aria-live="polite"></p>
+    </figure>
+
+    <section
+      id="player"
+      class="player"
+      role="application"
+      aria-label="Lecteur audio manga accessible, raccourcis clavier actifs"
+    >
     <div class="controls-row">
       <button id="btn-restart" type="button" aria-label="Retour au début" disabled>⏮ Début</button>
       <button id="btn-back10" type="button" aria-label="Reculer de 10 secondes" disabled>⏪ 10s</button>
@@ -262,7 +314,8 @@
       <p id="speed-display" aria-live="polite">Vitesse : 1.0x</p>
       <button id="btn-speed-up" type="button" aria-label="Augmenter la vitesse de lecture" disabled>+ Vitesse</button>
     </div>
-  </section>
+    </section>
+  </div>
 
   <audio id="audio" preload="metadata"></audio>
 </main>
@@ -280,9 +333,13 @@
   const audio = document.getElementById("audio");
   const fileInput = document.getElementById("file-input");
   const timelineInput = document.getElementById("timeline-input");
+  const mangaImagesInput = document.getElementById("manga-images-input");
   const fileTitle = document.getElementById("file-title");
   const statusMessage = document.getElementById("status-message");
   const player = document.getElementById("player");
+  const mangaPageFigure = document.getElementById("manga-page-figure");
+  const mangaPageImg = document.getElementById("manga-page");
+  const pageAnnouncement = document.getElementById("page-announcement");
 
   const btnPlay = document.getElementById("btn-play");
   const btnRestart = document.getElementById("btn-restart");
@@ -308,6 +365,8 @@
   let lastDisplayedSecond = -1;
   let timelineSegments = [];
   let currentSegmentIndex = -1;
+  let imageObjectUrls = [];
+  let currentPageIndex = -1;
 
   function formatTime(seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
@@ -385,6 +444,25 @@
     }
     const segment = timelineSegments[index];
     segmentDisplay.textContent = "[" + segment.kind.toUpperCase() + "] " + segment.text;
+    const pageIndex = typeof segment.page_index === "number" ? segment.page_index : 0;
+    showPage(pageIndex);
+  }
+
+  function showPage(pageIndex) {
+    if (imageObjectUrls.length === 0) return;
+    const clamped = Math.min(Math.max(pageIndex, 0), imageObjectUrls.length - 1);
+    if (clamped === currentPageIndex) return;
+    currentPageIndex = clamped;
+
+    mangaPageImg.style.opacity = "0";
+    mangaPageImg.src = imageObjectUrls[clamped];
+    mangaPageImg.alt = "Page manga " + (clamped + 1);
+    pageAnnouncement.textContent = "Page " + (clamped + 1) + " sur " + imageObjectUrls.length;
+  }
+
+  function stepPage(delta) {
+    if (imageObjectUrls.length === 0) return;
+    showPage((currentPageIndex === -1 ? 0 : currentPageIndex) + delta);
   }
 
   function setStatus(message) {
@@ -478,6 +556,24 @@
     });
   });
 
+  mangaImagesInput.addEventListener("change", () => {
+    const files = mangaImagesInput.files;
+    if (!files || files.length === 0) return;
+
+    imageObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    const sortedFiles = Array.from(files).sort((a, b) => a.name.localeCompare(b.name));
+    imageObjectUrls = sortedFiles.map((file) => URL.createObjectURL(file));
+    currentPageIndex = -1;
+
+    mangaPageFigure.hidden = false;
+    showPage(0);
+    setStatus(imageObjectUrls.length + " page(s) manga chargée(s).");
+  });
+
+  mangaPageImg.addEventListener("load", () => {
+    mangaPageImg.style.opacity = "1";
+  });
+
   audio.addEventListener("loadedmetadata", () => {
     seekBar.max = String(audio.duration);
     seekBar.value = "0";
@@ -554,6 +650,16 @@
       case "M":
         event.preventDefault();
         toggleMute();
+        break;
+      case "p":
+      case "P":
+        event.preventDefault();
+        stepPage(-1);
+        break;
+      case "n":
+      case "N":
+        event.preventDefault();
+        stepPage(1);
         break;
       default:
         break;
