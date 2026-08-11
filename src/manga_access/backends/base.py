@@ -111,6 +111,30 @@ class SceneDescriptionBackend(ABC):
         raise NotImplementedError
 
 
+class TranslationBackend(ABC):
+    """Contrat pour un backend de traduction texte (japonais -> langue cible)."""
+
+    @abstractmethod
+    def load(self) -> None:
+        """Charge le modèle en mémoire. Doit être appelé avant `translate`."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def unload(self) -> None:
+        """Décharge le modèle de la mémoire (contrainte RAM CPU du projet)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def translate(self, text: str, target_lang: str) -> str:
+        """Traduit `text` (japonais) vers `target_lang` (ex. "fr", "en").
+
+        Retourne `text` inchangé si la traduction échoue ou renvoie une
+        réponse vide (dégradation gracieuse, cohérent avec les autres
+        backends du projet) — jamais d'exception pour un texte non traduit.
+        """
+        raise NotImplementedError
+
+
 class TTSBackend(ABC):
     """Contrat pour un backend de synthèse vocale."""
 

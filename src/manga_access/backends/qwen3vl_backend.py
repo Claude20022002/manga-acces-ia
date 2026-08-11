@@ -19,7 +19,7 @@ from llama_cpp.llama_chat_format import MTMDChatHandler
 from loguru import logger
 from PIL import Image
 
-from manga_access.backends.base import SceneDescriptionBackend
+from manga_access.backends.base import SceneDescriptionBackend, TranslationBackend
 from manga_access.schemas.manga_page import BBox
 
 _DEFAULT_MODEL_PATH = "models/qwen3vl/Qwen3VL-4B-Instruct-Q4_K_M.gguf"
@@ -31,9 +31,17 @@ _DEFAULT_PROMPT = (
     "Ne décris pas le texte des bulles, seulement l'image."
 )
 
+_TARGET_LANG_NAMES = {"fr": "français", "en": "anglais"}
+
+_TRANSLATION_PROMPT_TEMPLATE = (
+    "Traduis ce texte japonais en {lang_name}. Réponds uniquement avec la "
+    "traduction, sans explication ni guillemets : {text}"
+)
+
 _N_CTX = 4096
 _N_THREADS = 6
 _MAX_TOKENS = 256
+_TRANSLATION_MAX_TOKENS = 128
 
 
 def _image_to_data_uri(image: Image.Image) -> str:
@@ -44,8 +52,14 @@ def _image_to_data_uri(image: Image.Image) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
-class QwenVLBackend(SceneDescriptionBackend):
-    """Backend de description de scène basé sur Qwen3-VL-4B-Instruct (GGUF Q4_K_M)."""
+class QwenVLBackend(SceneDescriptionBackend, TranslationBackend):
+    """Backend de description de scène ET de traduction, basé sur Qwen3-VL-4B-Instruct (GGUF Q4_K_M).
+
+    Un seul modèle chargé (`self._llm`) sert les deux usages : `describe()`
+    (prompt image+texte) et `translate()` (prompt texte seul, le
+    projecteur vision MTMD n'est sollicité que si un contenu image est
+    présent dans les messages).
+    """
 
     def __init__(self, model_path: str | None = None, mmproj_path: str | None = None) -> None:
         self._model_path = model_path or os.environ.get("QWEN3VL_MODEL_PATH", _DEFAULT_MODEL_PATH)
@@ -100,3 +114,41 @@ class QwenVLBackend(SceneDescriptionBackend):
         response = self._llm.create_chat_completion(messages=messages, max_tokens=_MAX_TOKENS)
         text = response["choices"][0]["message"]["content"].strip()
         return text or None
+
+    def translate(self, text: str, target_lang: str) -> str:
+        """Traduit `text` (japonais) vers `target_lang` ("fr" ou "en") via Qwen3-VL, texte seul.
+
+        Limite connue (benchmarks/qwen_vl_translate_smoketest.py,
+        docs/sessions/2026-08-11-qwen-translate-smoketest.md) : contresens
+        occasionnels sur les tournures japonaises familières/elliptiques
+        typiques des bulles de manga (ex. négation + particule de citation
+        « な...って » mal interprétée, sens inversé). Acceptable pour un MVP
+        — la traduction par LLM sur ce registre reste un problème ouvert
+        même pour les meilleurs modèles, pas un défaut de prompt corrigible
+        ici. Retourne `text` inchangé si la réponse est vide — ou si
+        l'appel modèle lève une exception : le contrat de
+        `TranslationBackend.translate()` garantit qu'un échec de traduction
+        ne fait jamais planter l'appelant (`pipeline/translation.py` traduit
+        potentiellement des dizaines de segments d'affilée, une erreur
+        isolée ne doit pas interrompre tout le job). Capture large
+        (`Exception`) faute de mode d'échec précis documenté pour
+        llama-cpp-python sur ce chemin texte-only, contrairement à
+        `KokoroBackend._phonemize_japanese` dont les exceptions connues sont
+        ciblées.
+        """
+        if self._llm is None:
+            raise RuntimeError("QwenVLBackend.load() doit être appelé avant translate().")
+
+        lang_name = _TARGET_LANG_NAMES.get(target_lang, target_lang)
+        prompt = _TRANSLATION_PROMPT_TEMPLATE.format(lang_name=lang_name, text=text)
+        messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+
+        try:
+            response = self._llm.create_chat_completion(
+                messages=messages, max_tokens=_TRANSLATION_MAX_TOKENS
+            )
+            translated = response["choices"][0]["message"]["content"].strip()
+        except Exception:  # noqa: BLE001 — contrat TranslationBackend : ne jamais lever, cf. docstring
+            logger.warning(f"Qwen3-VL : échec de traduction, texte original conservé : {text!r}")
+            return text
+        return translated or text

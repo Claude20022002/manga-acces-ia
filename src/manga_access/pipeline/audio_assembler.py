@@ -12,30 +12,36 @@ from loguru import logger
 from pydub import AudioSegment
 
 from manga_access.backends.base import TTSBackend
+from manga_access.pipeline.japanese_text import JAPANESE_CHAR_PATTERN
 from manga_access.pipeline.narration_builder import enrich_script
 from manga_access.schemas.narrative_script import NarrativeScript
 from manga_access.schemas.timeline import Timeline, TimelineSegment
 
 _SILENCE_BETWEEN_SEGMENTS_MS = 300
-_JAPANESE_CHAR_PATTERN = re.compile("[\\u3040-\\u309f\\u30a0-\\u30ff\\u4e00-\\u9fff]")
+
+_DEFAULT_LANG_BY_NARRATION_LANG = {"fr": "fr-fr", "en": "en-us"}
 
 
-def _detect_lang(text: str, kind: str) -> str:
+def _detect_lang(text: str, kind: str, default_lang: str = "en-us") -> str:
     """Détecte la langue de synthèse à passer à `TTSBackend.synthesize()`.
 
     Priorité : présence de caractères japonais (hiragana/katakana/kanji) ->
     "ja" ; sinon texte d'un `kind` narratif généré en français ->
-    "fr-fr" (`scene_description` par `describe_panel()`/Qwen3-VL,
-    `narration` par les segments préfixe/suffixe insérés par
-    `enrich_script()` — le check japonais ci-dessus a déjà exclu tout texte
-    japonais à ce stade, donc pas besoin de le revérifier) ; sinon -> "en-us"
-    (défaut de `TTSBackend.synthesize`).
+    "fr-fr" (`scene_description` par `describe_panel()`/Qwen3-VL, toujours
+    en français quel que soit `default_lang` — indépendant de la langue de
+    narration) ; sinon -> `default_lang`. `default_lang` (calculé par
+    `assemble_audio()` depuis son propre `narration_lang`) couvre
+    `kind="dialogue"`/`"thought"` : depuis l'intégration de la traduction
+    (Phase 3, `pipeline/translation.py`), un dialogue traduit en français
+    n'a plus de caractère japonais et doit être détecté "fr-fr", pas
+    "en-us" en dur (l'ancien comportement, qui donnait le mauvais
+    phonémiseur espeak à Kokoro pour du texte français).
     """
-    if _JAPANESE_CHAR_PATTERN.search(text):
+    if JAPANESE_CHAR_PATTERN.search(text):
         return "ja"
     if kind in ("scene_description", "narration"):
         return "fr-fr"
-    return "en-us"
+    return default_lang
 
 
 def _voice_for_lang(voice_id: str, lang: str) -> str:
@@ -112,10 +118,14 @@ def assemble_audio(
     cependant dans `script.segments` (jamais retirés, seulement sautés dans
     la boucle de synthèse), donc un `save_transcript()` fait sur ce même
     script les conserve. À True, comportement historique restauré (toujours
-    synthétisés).
+    synthétisés). `narration_lang` sert aussi de repli par défaut à
+    `_detect_lang()` pour les segments dialogue/thought sans caractère
+    japonais (traduits en amont par `translate_dialogues()`,
+    pipeline/translation.py) — "fr" -> "fr-fr", tout le reste -> "en-us".
     """
     if narration_lang is not None:
         script = enrich_script(script, lang=narration_lang)
+    default_lang = _DEFAULT_LANG_BY_NARRATION_LANG.get(narration_lang or "", "en-us")
 
     start = time.perf_counter()
     tts_backend.load()
@@ -131,11 +141,11 @@ def assemble_audio(
         if not text_stripped:
             logger.warning(f"Segment ignoré (texte vide) : {segment.id!r}")
             continue
-        lang = _detect_lang(text_stripped, segment.kind)
+        lang = _detect_lang(text_stripped, segment.kind, default_lang)
         voice = _voice_for_lang(segment.voice_id, lang)
         if lang == "ja":
             text_to_synth = _clean_japanese_text(text_stripped)
-            if not _JAPANESE_CHAR_PATTERN.search(text_to_synth):
+            if not JAPANESE_CHAR_PATTERN.search(text_to_synth):
                 logger.warning(
                     "Segment ignoré (ja détecté mais aucun caractère japonais après "
                     f"nettoyage) : {segment.id!r} texte nettoyé={text_to_synth!r}"

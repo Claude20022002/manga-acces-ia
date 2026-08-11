@@ -228,6 +228,34 @@ def test_detect_lang_japanese_wins_over_narration() -> None:
     assert _detect_lang("こんにちは", kind="narration") == "ja"
 
 
+def test_detect_lang_default_lang_override_french() -> None:
+    """default_lang="fr-fr" : un dialogue sans japonais (ex. traduit) est détecté "fr-fr", pas "en-us".
+
+    Bug corrigé (Phase 3, traduction) : avant ce fix, un dialogue traduit en
+    français retombait sur "en-us" en dur, donnant à Kokoro le mauvais
+    phonémiseur espeak pour du texte français.
+    """
+    assert _detect_lang("Bonjour", kind="dialogue", default_lang="fr-fr") == "fr-fr"
+
+
+def test_detect_lang_default_lang_defaults_to_en_us() -> None:
+    """Sans default_lang explicite, comportement historique préservé ("en-us")."""
+    assert _detect_lang("Hello there!", kind="dialogue") == "en-us"
+
+
+def test_detect_lang_japanese_wins_over_default_lang_override() -> None:
+    """Priorité : japonais détecté même avec default_lang="fr-fr" -> "ja" quand même."""
+    assert _detect_lang("こんにちは", kind="dialogue", default_lang="fr-fr") == "ja"
+
+
+def test_detect_lang_scene_description_stays_french_regardless_of_default_lang() -> None:
+    """scene_description reste "fr-fr" même avec default_lang="en-us" (règle indépendante)."""
+    assert (
+        _detect_lang("2 personnages détectés.", kind="scene_description", default_lang="en-us")
+        == "fr-fr"
+    )
+
+
 def test_voice_for_lang_japanese_keeps_voice_id() -> None:
     """lang='ja' -> voice_id d'entrée inchangé (déjà une voix japonaise assignée en amont)."""
     assert _voice_for_lang("jf_alpha", "ja") == "jf_alpha"
@@ -257,6 +285,24 @@ def test_assemble_audio_passes_detected_lang(tmp_path: Path) -> None:
 
     langs = [call[2] for call in backend.synthesize_calls]
     assert langs == ["ja", "en-us"]
+
+
+def test_assemble_audio_translated_dialogue_detected_as_narration_lang(tmp_path: Path) -> None:
+    """Un dialogue déjà traduit (sans japonais) est détecté dans narration_lang, pas "en-us" en dur.
+
+    Simule le résultat de translate_dialogues() (Phase 3) : le texte du
+    segment est déjà en français au moment où assemble_audio() le reçoit
+    (la traduction se fait en amont, dans demo.py, pas ici).
+    """
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[_make_segment("seg-1", text="Bonjour", kind="dialogue")],
+    )
+    backend = _FakeTTSBackend()
+
+    assemble_audio(script, backend, tmp_path / "out.opus", narration_lang="fr")
+
+    assert backend.synthesize_calls[0][2] == "fr-fr"
 
 
 def test_assemble_audio_returns_timeline_with_correct_boundaries(tmp_path: Path) -> None:

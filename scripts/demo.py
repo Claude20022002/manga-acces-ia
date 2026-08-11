@@ -2,10 +2,11 @@
 """Démonstration bout-en-bout : dossier d'images manga -> audio navigable.
 
 Enchaîne le pipeline production (ChapterProcessor -> NarrativeScript par
-page, fusionnés -> assemble_audio) sur un dossier d'images, avec des logs
-colorés par étape. Script de démonstration, pas du code de production
-(comme benchmarks/) : produit exactement demo.opus/demo.txt/
-demo.timeline.json dans --output-dir.
+page, fusionnés -> traduction des dialogues si narration_lang != "ja"
+(Phase 3, pipeline/translation.py) -> assemble_audio) sur un dossier
+d'images, avec des logs colorés par étape. Script de démonstration, pas du
+code de production (comme benchmarks/) : produit exactement demo.opus/
+demo.txt/demo.timeline.json dans --output-dir.
 
 Usage:
     python scripts/demo.py data/manga_jpg \\
@@ -28,6 +29,7 @@ try:
     from manga_access.backends.kokoro_backend import KokoroBackend
     from manga_access.backends.magiv2_backend import Magiv2Backend
     from manga_access.backends.manga_ocr_backend import MangaOCRBackend
+    from manga_access.backends.qwen3vl_backend import QwenVLBackend
 except ImportError as exc:
     print(
         f"Erreur : le paquet '{exc.name}' n'est pas installé.\n"
@@ -46,6 +48,7 @@ from manga_access.pipeline.chapter_processor import ChapterProcessor
 from manga_access.pipeline.character_bank import load_character_bank
 from manga_access.pipeline.image_source import find_images
 from manga_access.pipeline.narrative_builder import build_narrative_script
+from manga_access.pipeline.translation import translate_dialogues
 from manga_access.schemas.narrative_script import NarrativeScript
 
 
@@ -99,6 +102,15 @@ def run_demo(
     merged_script = merge_narrative_scripts(
         scripts, source={"folder": str(images_dir), "page_count": len(pages_result)}
     )
+
+    if narration_lang != "ja":
+        logger.info("🌐 Traduction des dialogues...")
+        t0 = time.perf_counter()
+        qwen_backend = QwenVLBackend()
+        qwen_backend.load()
+        translate_dialogues(merged_script, qwen_backend, narration_lang)
+        qwen_backend.unload()
+        logger.info(f"Traduction terminée en {time.perf_counter() - t0:.2f}s")
 
     logger.info("🎤 Synthèse vocale...")
     output_dir.mkdir(parents=True, exist_ok=True)
