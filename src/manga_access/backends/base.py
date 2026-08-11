@@ -8,6 +8,7 @@ directement — toujours passer par ces contrats.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -63,6 +64,26 @@ class StructureBackend(ABC):
         # sous-jacent (ex. Magiv2), avant assemblage dans le schéma MangaPage.
         Retourne un dict incluant au minimum les clés "panels" et "texts"
         (listes de bbox [x1, y1, x2, y2]).
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def detect_chapter(
+        self,
+        images: Sequence[np.ndarray | Image.Image],
+        character_bank: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Détecte la structure de tout un chapitre (`images`, dans l'ordre de lecture).
+
+        Contrairement à `detect`, traite toutes les pages en un seul appel
+        modèle : c'est ce qui permet l'identification nominative des
+        personnages par `character_bank` (dict `{"images": [...], "names": [...]}`
+        de portraits de référence) — le matching s'appuie sur des contraintes
+        de cohérence *entre* les pages du chapitre, impossibles à reproduire
+        page par page. Si `character_bank` est `None` ou vide, aucun nom
+        n'est assigné (comportement équivalent à `detect` appelé page par
+        page). Retourne une liste de dicts, un par page, dans le même format
+        que `detect` plus la clé "character_names".
         """
         raise NotImplementedError
 

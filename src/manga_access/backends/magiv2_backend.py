@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -53,3 +54,23 @@ class Magiv2Backend(StructureBackend):
             [image_np], move_to_device_fn=None
         )
         return results[0]
+
+    def detect_chapter(
+        self,
+        images: Sequence[np.ndarray | Image.Image],
+        character_bank: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Détecte panels/bulles/personnages sur tout un chapitre via Magiv2, avec noms optionnels.
+
+        `character_bank` = {"images": [...], "names": [...]} de portraits de
+        référence (mêmes conventions que `detect` pour le format image).
+        L'OCR intégré de Magiv2 est désactivé (do_ocr=False) : le projet
+        utilise manga-ocr comme seule source d'OCR (stack décidée).
+        """
+        if self._model is None:
+            raise RuntimeError("Magiv2Backend.load() doit être appelé avant detect_chapter().")
+
+        images_np = [np.array(img) if isinstance(img, Image.Image) else img for img in images]
+        bank = character_bank if character_bank is not None else {"images": [], "names": []}
+
+        return self._model.do_chapter_wide_prediction(images_np, bank, do_ocr=False)

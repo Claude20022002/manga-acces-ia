@@ -16,6 +16,7 @@ class NarrativeSegment(BaseModel):
     voice_id: str
     text: str
     source_element_id: str | None = None
+    character_name: str | None = None
 
 
 class NarrativeScript(BaseModel):

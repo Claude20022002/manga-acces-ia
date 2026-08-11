@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import zlib
+
 from manga_access.schemas.manga_page import MangaPage, Panel, TextElement
 from manga_access.schemas.narrative_script import NarrativeScript, NarrativeSegment
 
@@ -11,14 +13,19 @@ VOICE_UNKNOWN = "jf_nezumi"
 _CHARACTER_VOICE_POOL = ("jf_alpha", "jf_gongitsune", "jm_kumo")
 
 
-def _voice_for_character(character_id: str) -> str:
-    """Détermine la voix TTS japonaise d'un personnage depuis son cluster_id.
+def _voice_for_character(character_id: str, name: str | None) -> str:
+    """Détermine la voix TTS japonaise d'un personnage.
 
-    character_id suit le format "char-{cluster_id}" (PageProcessor,
-    benchmark_corpus.py). Assignation déterministe par cluster_id % 3 sur
-    un pool de voix japonaises Kokoro : même cluster -> même voix à chaque
-    run, jm_kumo apporte une voix masculine pour la variété.
+    Si `name` est connu (identification par character_bank, Phase 9), la
+    voix est dérivée d'un hash stable du nom plutôt que du cluster_id : le
+    cluster_id est local à chaque page (PageProcessor/ChapterProcessor), donc
+    un même personnage nommé changerait sinon de voix d'une page à l'autre
+    malgré un nom annoncé stable. Sans nom, fallback sur l'ancien schéma
+    (cluster_id % 3, character_id au format "char-{cluster_id}").
     """
+    if name is not None:
+        index = zlib.crc32(name.encode()) % len(_CHARACTER_VOICE_POOL)
+        return _CHARACTER_VOICE_POOL[index]
     cluster_id = int(character_id.rsplit("-", 1)[-1])
     return _CHARACTER_VOICE_POOL[cluster_id % len(_CHARACTER_VOICE_POOL)]
 
@@ -42,6 +49,7 @@ def _text_for_element(element: TextElement) -> str:
 def _segments_for_panel(
     panel: Panel,
     character_voices: dict[str, str],
+    character_names: dict[str, str],
     last_scene_description: str | None,
 ) -> tuple[list[NarrativeSegment], str | None]:
     """Construit les segments narratifs d'un panel : description de scène (si nouvelle) puis éléments.
@@ -70,6 +78,9 @@ def _segments_for_panel(
     # TODO(Phase 3) : panel.elements n'est pas trié spatialement, c'est l'ordre
     # de détection Magiv2 brut — pas garanti top-to-bottom / droite-à-gauche.
     for element in panel.elements:
+        character_name = (
+            character_names.get(element.speaker_id) if element.speaker_id is not None else None
+        )
         segments.append(
             NarrativeSegment(
                 id=f"seg-{element.id}",
@@ -78,6 +89,7 @@ def _segments_for_panel(
                 voice_id=_voice_for_element(element, character_voices),
                 text=_text_for_element(element),
                 source_element_id=element.id,
+                character_name=character_name,
             )
         )
 
@@ -91,14 +103,20 @@ def build_narrative_script(page: MangaPage) -> NarrativeScript:
     `reading_direction`), et pour chacun : un segment de description de scène
     s'il est renseigné, puis un segment par élément de texte détecté.
     """
-    character_voices = {character.id: _voice_for_character(character.id) for character in page.characters}
+    character_voices = {
+        character.id: _voice_for_character(character.id, character.name)
+        for character in page.characters
+    }
+    character_names = {
+        character.id: character.name for character in page.characters if character.name is not None
+    }
     ordered_panels = sorted(page.panels, key=lambda panel: panel.order)
 
     segments: list[NarrativeSegment] = []
     last_scene_description: str | None = None
     for panel in ordered_panels:
         panel_segments, last_scene_description = _segments_for_panel(
-            panel, character_voices, last_scene_description
+            panel, character_voices, character_names, last_scene_description
         )
         segments.extend(panel_segments)
 

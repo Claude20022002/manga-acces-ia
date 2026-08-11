@@ -13,7 +13,12 @@ from manga_access.schemas.narrative_script import NarrativeScript, NarrativeSegm
 
 
 def _make_segment(
-    id_: str, kind: str, text: str, voice_id: str = VOICE_NARRATOR, panel_id: str = "panel-0"
+    id_: str,
+    kind: str,
+    text: str,
+    voice_id: str = VOICE_NARRATOR,
+    panel_id: str = "panel-0",
+    character_name: str | None = None,
 ) -> NarrativeSegment:
     """Construit un NarrativeSegment minimal pour les tests."""
     return NarrativeSegment(
@@ -22,6 +27,7 @@ def _make_segment(
         kind=kind,  # type: ignore[arg-type]
         voice_id=voice_id,
         text=text,
+        character_name=character_name,
     )
 
 
@@ -70,6 +76,32 @@ def test_dialogue_known_speaker_unknown_gender_fr() -> None:
     enrich_script(script, lang="fr")
 
     assert script.segments[0].text == "Le personnage dit :"
+
+
+def test_dialogue_known_speaker_named_fr() -> None:
+    """character_name renseigné (Phase 9, character_bank) : préfixe '{nom} dit :' plutôt que genré."""
+    dialogue = _make_segment(
+        "seg-1", "dialogue", "おはよう", voice_id="jf_alpha", character_name="Naruto"
+    )
+    sfx = _make_segment("seg-sfx", "sfx", "[ドン]")
+    script = _make_script([dialogue, sfx])
+
+    enrich_script(script, lang="fr")
+
+    assert script.segments[0].text == "Naruto dit :"
+
+
+def test_dialogue_known_speaker_named_takes_priority_over_unknown_gender() -> None:
+    """Un nom connu prime sur une voix au genre indéterminable (pas de repli 'Le personnage dit')."""
+    dialogue = _make_segment(
+        "seg-1", "dialogue", "おはよう", voice_id="voice-custom", character_name="Sakura"
+    )
+    sfx = _make_segment("seg-sfx", "sfx", "[ドン]")
+    script = _make_script([dialogue, sfx])
+
+    enrich_script(script, lang="fr")
+
+    assert script.segments[0].text == "Sakura dit :"
 
 
 def test_dialogue_known_speaker_ja_suffix_after() -> None:

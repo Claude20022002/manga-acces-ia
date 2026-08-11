@@ -74,11 +74,44 @@ def test_dialogue_with_speaker() -> None:
 
 
 def test_voice_for_character_pool_by_cluster_id() -> None:
-    """cluster_id % 3 sélectionne déterministiquement dans le pool japonais."""
-    assert _voice_for_character("char-0") == "jf_alpha"
-    assert _voice_for_character("char-1") == "jf_gongitsune"
-    assert _voice_for_character("char-2") == "jm_kumo"
-    assert _voice_for_character("char-3") == "jf_alpha"
+    """Sans nom connu, cluster_id % 3 sélectionne déterministiquement dans le pool japonais."""
+    assert _voice_for_character("char-0", None) == "jf_alpha"
+    assert _voice_for_character("char-1", None) == "jf_gongitsune"
+    assert _voice_for_character("char-2", None) == "jm_kumo"
+    assert _voice_for_character("char-3", None) == "jf_alpha"
+
+
+def test_voice_for_character_stable_by_name_across_cluster_ids() -> None:
+    """Un nom connu détermine la voix indépendamment du cluster_id (stabilité inter-pages)."""
+    voice_via_char_0 = _voice_for_character("char-0", "Naruto")
+    voice_via_char_5 = _voice_for_character("char-5", "Naruto")
+
+    assert voice_via_char_0 == voice_via_char_5
+    assert voice_via_char_0 in ("jf_alpha", "jf_gongitsune", "jm_kumo")
+
+
+def test_dialogue_with_named_speaker_gets_character_name() -> None:
+    """Un dialogue dont le speaker a un Character.name renseigné propage ce nom au segment."""
+    element = _make_element("text-1", "dialogue", "おはよう", speaker_id="char-1")
+    panel = _make_panel("panel-0", order=0, elements=[element])
+    character = Character(id="char-1", voice_id="voice-a", name="Naruto", cluster_confidence=1.0)
+    page = _make_page([panel], characters=[character])
+
+    script = build_narrative_script(page)
+
+    assert script.segments[0].character_name == "Naruto"
+
+
+def test_dialogue_with_unnamed_speaker_has_no_character_name() -> None:
+    """Un speaker sans Character.name (None) laisse character_name à None sur le segment."""
+    element = _make_element("text-1", "dialogue", "おはよう", speaker_id="char-1")
+    panel = _make_panel("panel-0", order=0, elements=[element])
+    character = Character(id="char-1", voice_id="voice-a", cluster_confidence=1.0)
+    page = _make_page([panel], characters=[character])
+
+    script = build_narrative_script(page)
+
+    assert script.segments[0].character_name is None
 
 
 def test_dialogue_unknown_speaker() -> None:

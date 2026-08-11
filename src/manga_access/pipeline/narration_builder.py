@@ -84,7 +84,9 @@ def _dialogue_segments(
     speaker inconnu : narration avant (préfixe). ja speaker connu : narration
     après (suffixe) — "{texte}、と言った" est une proposition rapportée qui
     suit la citation en japonais, gabarit conservé tel quel depuis la
-    Phase D plutôt que d'inventer une formulation en préfixe.
+    Phase D plutôt que d'inventer une formulation en préfixe. fr speaker
+    connu et nommé (character_bank, Phase 9) : préfixe "{nom} dit :" plutôt
+    que le préfixe genré générique.
     """
     if same_speaker_as_previous or not has_following_dialogue_or_sfx:
         return [segment]
@@ -96,6 +98,9 @@ def _dialogue_segments(
     if lang == "ja":
         suffix = _narrator_segment("、と言った", lang, segment)
         return [segment, suffix]
+
+    if segment.character_name is not None:
+        return [_narrator_segment(f"{segment.character_name} dit :", lang, segment), segment]
 
     gender = _infer_gender(segment.voice_id)
     prefix = {"female": "Elle dit", "male": "Il dit", "unknown": "Le personnage dit"}[gender]
