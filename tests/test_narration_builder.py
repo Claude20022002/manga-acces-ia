@@ -1,4 +1,4 @@
-"""Tests de l'enrichissement narratif du NarrativeScript (préfixes contextuels)."""
+"""Tests de l'enrichissement narratif du NarrativeScript (segments de narration contextuels)."""
 
 from __future__ import annotations
 
@@ -31,152 +31,197 @@ def _make_script(segments: list[NarrativeSegment]) -> NarrativeScript:
 
 
 def test_dialogue_known_speaker_female_fr() -> None:
-    """Un dialogue connu avec une voix jf_* devient 'Elle dit : {texte}' en fr."""
-    segment = _make_segment("seg-1", "dialogue", "おはよう", voice_id="jf_alpha")
-    script = _make_script([segment])
+    """Dialogue connu, voix jf_* : un segment narration 'Elle dit :' est inséré avant, en ff_siwis."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id="jf_alpha")
+    script = _make_script([dialogue])
 
     enrich_script(script, lang="fr")
 
-    assert script.segments[0].text == "Elle dit : おはよう"
+    assert [s.kind for s in script.segments] == ["narration", "dialogue"]
+    assert script.segments[0].text == "Elle dit :"
+    assert script.segments[0].voice_id == "ff_siwis"
+    assert script.segments[1] is dialogue
+    assert dialogue.text == "おはよう"
+    assert dialogue.voice_id == "jf_alpha"
 
 
 def test_dialogue_known_speaker_male_fr() -> None:
-    """Un dialogue connu avec une voix jm_* devient 'Il dit : {texte}' en fr."""
-    segment = _make_segment("seg-1", "dialogue", "おはよう", voice_id="jm_kumo")
-    script = _make_script([segment])
+    """Dialogue connu, voix jm_* : le segment narration inséré dit 'Il dit :'."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id="jm_kumo")
+    script = _make_script([dialogue])
 
     enrich_script(script, lang="fr")
 
-    assert script.segments[0].text == "Il dit : おはよう"
+    assert script.segments[0].text == "Il dit :"
 
 
 def test_dialogue_known_speaker_unknown_gender_fr() -> None:
-    """Une voix qui ne suit pas la convention f/m devient 'Le personnage dit :' en fr."""
-    segment = _make_segment("seg-1", "dialogue", "おはよう", voice_id="voice-custom")
-    script = _make_script([segment])
+    """Une voix qui ne suit pas la convention f/m donne 'Le personnage dit :'."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id="voice-custom")
+    script = _make_script([dialogue])
 
     enrich_script(script, lang="fr")
 
-    assert script.segments[0].text == "Le personnage dit : おはよう"
+    assert script.segments[0].text == "Le personnage dit :"
 
 
-def test_dialogue_known_speaker_ja() -> None:
-    """Un dialogue connu en ja devient '{texte}、と言った', sans distinction de genre."""
-    segment = _make_segment("seg-1", "dialogue", "おはよう", voice_id="jf_alpha")
-    script = _make_script([segment])
+def test_dialogue_known_speaker_ja_suffix_after() -> None:
+    """ja, speaker connu : le dialogue reste inchangé, suivi d'un segment narration '、と言った'."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id="jf_alpha")
+    script = _make_script([dialogue])
 
     enrich_script(script, lang="ja")
 
-    assert script.segments[0].text == "おはよう、と言った"
+    assert [s.kind for s in script.segments] == ["dialogue", "narration"]
+    assert script.segments[0] is dialogue
+    assert dialogue.text == "おはよう"
+    assert script.segments[1].text == "、と言った"
+    assert script.segments[1].voice_id == VOICE_NARRATOR
 
 
 def test_dialogue_unknown_speaker_fr() -> None:
-    """Un dialogue avec VOICE_UNKNOWN devient 'Une voix dit : {texte}' en fr."""
-    segment = _make_segment("seg-1", "dialogue", "おはよう", voice_id=VOICE_UNKNOWN)
-    script = _make_script([segment])
+    """VOICE_UNKNOWN, fr : segment narration 'Une voix dit :' inséré avant, dialogue inchangé."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id=VOICE_UNKNOWN)
+    script = _make_script([dialogue])
 
     enrich_script(script, lang="fr")
 
-    assert script.segments[0].text == "Une voix dit : おはよう"
+    assert [s.kind for s in script.segments] == ["narration", "dialogue"]
+    assert script.segments[0].text == "Une voix dit :"
+    assert script.segments[0].voice_id == "ff_siwis"
+    assert script.segments[1] is dialogue
+    assert dialogue.voice_id == VOICE_UNKNOWN
 
 
 def test_dialogue_unknown_speaker_ja() -> None:
-    """Un dialogue avec VOICE_UNKNOWN devient '声が言った：{texte}' en ja."""
-    segment = _make_segment("seg-1", "dialogue", "おはよう", voice_id=VOICE_UNKNOWN)
-    script = _make_script([segment])
+    """VOICE_UNKNOWN, ja : segment narration '声が言った：' inséré avant, dialogue inchangé."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id=VOICE_UNKNOWN)
+    script = _make_script([dialogue])
 
     enrich_script(script, lang="ja")
 
-    assert script.segments[0].text == "声が言った：おはよう"
+    assert [s.kind for s in script.segments] == ["narration", "dialogue"]
+    assert script.segments[0].text == "声が言った："
+    assert script.segments[0].voice_id == VOICE_NARRATOR
 
 
 def test_sfx_deterministic_same_id_same_variation() -> None:
     """Le même segment.id sélectionne toujours la même variation SFX (déterminisme)."""
-    segment_a = _make_segment("seg-text-0", "sfx", "[ドン]")
-    segment_b = _make_segment("seg-text-0", "sfx", "[ドン]")
+    sfx_a = _make_segment("seg-text-0", "sfx", "[ドン]")
+    sfx_b = _make_segment("seg-text-0", "sfx", "[ドン]")
 
-    enrich_script(_make_script([segment_a]), lang="fr")
-    enrich_script(_make_script([segment_b]), lang="fr")
+    enrich_script(_make_script([sfx_a]), lang="fr")
+    enrich_script(_make_script([sfx_b]), lang="fr")
 
-    assert segment_a.text == segment_b.text
+    assert sfx_a.text == sfx_b.text == "[ドン]"  # segment sfx d'origine inchangé dans les deux cas
 
 
 def test_sfx_variation_selection_by_crc32_id() -> None:
     """crc32(id) % 4 sélectionne déterministiquement la variation SFX (table exhaustive)."""
     ids_by_bucket = ["seg-text-1", "seg-text-5", "seg-text-0", "seg-text-4"]
-    segments = [_make_segment(id_, "sfx", "[ドン]") for id_ in ids_by_bucket]
-    script = _make_script(segments)
+    sfx_segments = [_make_segment(id_, "sfx", "[ドン]") for id_ in ids_by_bucket]
+    script = _make_script(sfx_segments)
 
     enrich_script(script, lang="fr")
 
-    for segment, variation in zip(script.segments, _SFX_PREFIX_VARIATIONS_FR, strict=True):
-        assert segment.text == variation.format(texte="[ドン]")
+    narrator_texts = [script.segments[i].text for i in range(0, 8, 2)]
+    assert narrator_texts == list(_SFX_PREFIX_VARIATIONS_FR)
+
+
+def test_sfx_fr_inserts_narration_before_unchanged_sfx() -> None:
+    """SFX fr : un segment narration est inséré avant le sfx, qui reste inchangé."""
+    sfx = _make_segment("seg-1", "sfx", "[ドン]")
+    script = _make_script([sfx])
+
+    enrich_script(script, lang="fr")
+
+    assert [s.kind for s in script.segments] == ["narration", "sfx"]
+    assert script.segments[0].voice_id == "ff_siwis"
+    assert script.segments[1] is sfx
+    assert sfx.text == "[ドン]"
 
 
 def test_sfx_ja_unchanged() -> None:
-    """Un SFX en ja reste inchangé (aucun gabarit ja spécifié)."""
-    segment = _make_segment("seg-1", "sfx", "[ドン]")
-    script = _make_script([segment])
+    """Un SFX en ja reste seul, sans segment narration ajouté (aucun gabarit ja spécifié)."""
+    sfx = _make_segment("seg-1", "sfx", "[ドン]")
+    script = _make_script([sfx])
 
     enrich_script(script, lang="ja")
 
-    assert script.segments[0].text == "[ドン]"
+    assert script.segments == [sfx]
 
 
 def test_narration_unchanged_fr() -> None:
-    """Une narration reste inchangée en fr (déjà narrative)."""
-    segment = _make_segment("seg-1", "narration", "静かな夜だった。")
-    script = _make_script([segment])
+    """Une narration reste inchangée en fr, aucun segment supplémentaire n'est ajouté."""
+    narration = _make_segment("seg-1", "narration", "静かな夜だった。")
+    script = _make_script([narration])
 
     enrich_script(script, lang="fr")
 
-    assert script.segments[0].text == "静かな夜だった。"
+    assert script.segments == [narration]
 
 
 def test_narration_unchanged_ja() -> None:
     """Une narration reste inchangée en ja."""
-    segment = _make_segment("seg-1", "narration", "静かな夜だった。")
-    script = _make_script([segment])
+    narration = _make_segment("seg-1", "narration", "静かな夜だった。")
+    script = _make_script([narration])
 
     enrich_script(script, lang="ja")
 
-    assert script.segments[0].text == "静かな夜だった。"
+    assert script.segments == [narration]
 
 
 def test_scene_description_unchanged_even_in_ja() -> None:
     """scene_description reste inchangé même avec lang='ja' (toujours généré en fr par Qwen3-VL)."""
-    segment = _make_segment("seg-1", "scene_description", "Une rue calme sous la pluie.")
-    script = _make_script([segment])
+    scene = _make_segment("seg-1", "scene_description", "Une rue calme sous la pluie.")
+    script = _make_script([scene])
 
     enrich_script(script, lang="ja")
 
-    assert script.segments[0].text == "Une rue calme sous la pluie."
+    assert script.segments == [scene]
 
 
 def test_thought_unchanged() -> None:
     """thought reste inchangé (hors périmètre de cette phase)."""
-    segment = _make_segment("seg-1", "thought", "本当にいいのかな…", voice_id="jf_alpha")
-    script = _make_script([segment])
+    thought = _make_segment("seg-1", "thought", "本当にいいのかな…", voice_id="jf_alpha")
+    script = _make_script([thought])
 
     enrich_script(script, lang="fr")
 
-    assert script.segments[0].text == "本当にいいのかな…"
+    assert script.segments == [thought]
 
 
 def test_unsupported_lang_raises() -> None:
     """Un lang non supporté ('en') lève ValueError."""
-    segment = _make_segment("seg-1", "narration", "texte")
-    script = _make_script([segment])
+    script = _make_script([_make_segment("seg-1", "narration", "texte")])
 
     with pytest.raises(ValueError, match="en"):
         enrich_script(script, lang="en")
 
 
 def test_enrich_script_returns_same_instance() -> None:
-    """enrich_script() mute en place et retourne la même instance NarrativeScript."""
-    segment = _make_segment("seg-1", "narration", "texte")
-    script = _make_script([segment])
+    """enrich_script() retourne la même instance NarrativeScript (segments remplacés en place)."""
+    script = _make_script([_make_segment("seg-1", "narration", "texte")])
 
     result = enrich_script(script, lang="fr")
 
     assert result is script
+
+
+def test_mixed_script_preserves_order_and_inserts_only_where_needed() -> None:
+    """Un script mixte garde son ordre global ; seuls dialogue/sfx gagnent un segment narration."""
+    narration = _make_segment("seg-n", "narration", "Le vent soufflait.")
+    dialogue = _make_segment("seg-d", "dialogue", "おはよう", voice_id="jm_kumo")
+    sfx = _make_segment("seg-s", "sfx", "[ドン]")
+    script = _make_script([narration, dialogue, sfx])
+
+    enrich_script(script, lang="fr")
+
+    assert [s.kind for s in script.segments] == [
+        "narration",  # narration d'origine, inchangée
+        "narration",  # préfixe inséré avant dialogue
+        "dialogue",
+        "narration",  # préfixe inséré avant sfx
+        "sfx",
+    ]
+    assert script.segments[0] is narration

@@ -150,6 +150,16 @@ def test_detect_lang_japanese_wins_over_scene_description() -> None:
     assert _detect_lang("こんにちは", kind="scene_description") == "ja"
 
 
+def test_detect_lang_narration_french() -> None:
+    """Texte latin de kind='narration' -> 'fr-fr' (préfixes/suffixes insérés par enrich_script())."""
+    assert _detect_lang("Elle dit :", kind="narration") == "fr-fr"
+
+
+def test_detect_lang_japanese_wins_over_narration() -> None:
+    """Priorité : japonais détecté même si kind='narration' -> 'ja'."""
+    assert _detect_lang("こんにちは", kind="narration") == "ja"
+
+
 def test_voice_for_lang_japanese_keeps_voice_id() -> None:
     """lang='ja' -> voice_id d'entrée inchangé (déjà une voix japonaise assignée en amont)."""
     assert _voice_for_lang("jf_alpha", "ja") == "jf_alpha"
@@ -270,7 +280,7 @@ def test_narration_lang_none_leaves_text_unchanged(tmp_path: Path) -> None:
 
 
 def test_narration_lang_enriches_text_before_synthesis(tmp_path: Path) -> None:
-    """narration_lang="fr" : le texte synthétisé et la Timeline portent le préfixe enrichi."""
+    """narration_lang="fr" : un segment narration (voix narrateur) est synthétisé avant le dialogue."""
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
         segments=[_make_segment("seg-1", text="Bonjour", kind="dialogue")],
@@ -278,19 +288,23 @@ def test_narration_lang_enriches_text_before_synthesis(tmp_path: Path) -> None:
     backend = _FakeTTSBackend()
     timeline = assemble_audio(script, backend, tmp_path / "out.opus", narration_lang="fr")
 
-    assert backend.synthesize_calls[0][0] == "Elle dit : Bonjour"
-    assert timeline.segments[0].text == "Elle dit : Bonjour"
+    assert [call[0] for call in backend.synthesize_calls] == ["Elle dit :", "Bonjour"]
+    assert backend.synthesize_calls[0][1] == "ff_siwis"
+    assert [s.text for s in timeline.segments] == ["Elle dit :", "Bonjour"]
+    assert [s.kind for s in timeline.segments] == ["narration", "dialogue"]
 
 
 def test_narration_lang_mutates_caller_script_in_place(tmp_path: Path) -> None:
-    """enrich_script() étant appelé en place, le script de l'appelant est aussi enrichi."""
+    """enrich_script() étant appelé en place, le script de l'appelant a aussi le segment narration."""
     script = NarrativeScript(
         source={"file": "test.jpg", "page_index": 0},
         segments=[_make_segment("seg-1", text="Bonjour", kind="dialogue")],
     )
     assemble_audio(script, _FakeTTSBackend(), tmp_path / "out.opus", narration_lang="fr")
 
-    assert script.segments[0].text == "Elle dit : Bonjour"
+    assert [s.kind for s in script.segments] == ["narration", "dialogue"]
+    assert script.segments[0].text == "Elle dit :"
+    assert script.segments[1].text == "Bonjour"
 
 
 def test_save_timeline_writes_json(tmp_path: Path) -> None:

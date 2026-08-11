@@ -23,13 +23,16 @@ def _detect_lang(text: str, kind: str) -> str:
     """Détecte la langue de synthèse à passer à `TTSBackend.synthesize()`.
 
     Priorité : présence de caractères japonais (hiragana/katakana/kanji) ->
-    "ja" ; sinon texte de `kind == "scene_description"` (généré par
-    `describe_panel()`, toujours en français) -> "fr-fr" ; sinon -> "en-us"
+    "ja" ; sinon texte d'un `kind` narratif généré en français ->
+    "fr-fr" (`scene_description` par `describe_panel()`/Qwen3-VL,
+    `narration` par les segments préfixe/suffixe insérés par
+    `enrich_script()` — le check japonais ci-dessus a déjà exclu tout texte
+    japonais à ce stade, donc pas besoin de le revérifier) ; sinon -> "en-us"
     (défaut de `TTSBackend.synthesize`).
     """
     if _JAPANESE_CHAR_PATTERN.search(text):
         return "ja"
-    if kind == "scene_description":
+    if kind in ("scene_description", "narration"):
         return "fr-fr"
     return "en-us"
 
