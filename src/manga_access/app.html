@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manga Access AI — Démonstration</title>
+<style>
+  :root {
+    --color-bg: #ffffff;
+    --color-text: #1a1a1a;
+    --color-muted: #4b5157;
+    --color-primary-bg: #1d3557;
+    --color-primary-text: #ffffff;
+    --color-disabled-bg: #d9dde1;
+    --color-disabled-text: #6c757d;
+    --color-border: #6c757d;
+    --color-focus: #1a1a1a;
+    --color-error: #9c2b2b;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    line-height: 1.5;
+    margin: 0;
+    padding: 1.5rem;
+  }
+
+  main {
+    max-width: 56rem;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .intro {
+    color: var(--color-muted);
+    margin-top: 0;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .file-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 1.25rem 0 0.5rem;
+  }
+
+  .file-picker label {
+    font-weight: 600;
+  }
+
+  select, input[type="number"] {
+    font: inherit;
+    max-width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.3rem;
+  }
+
+  #pages-input {
+    max-width: 8rem;
+  }
+
+  #status-message {
+    margin: 1rem 0;
+    min-height: 1.2em;
+  }
+
+  #status-message.error {
+    color: var(--color-error);
+    font-weight: 600;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 1rem;
+    margin: 0.5rem 0 1rem;
+  }
+
+  .log-output {
+    max-height: 12rem;
+    overflow-y: auto;
+    background: #f1f2f4;
+    border: 1px solid var(--color-border);
+    border-radius: 0.4rem;
+    padding: 0.75rem;
+    margin: 0 0 1.25rem;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+  }
+
+  .shortcuts-help {
+    margin-bottom: 1.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.4rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .shortcuts-help summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .shortcuts-help ul {
+    margin: 0.5rem 0 0.25rem;
+    padding-left: 1.25rem;
+  }
+
+  .shortcuts-help kbd {
+    border: 1px solid var(--color-border);
+    border-radius: 0.25rem;
+    padding: 0.05rem 0.4rem;
+    font-family: inherit;
+    background: #f1f2f4;
+  }
+
+  .layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    align-items: flex-start;
+  }
+
+  .manga-page-figure {
+    flex: 1 1 18rem;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 0.6rem;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .manga-page-figure img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    border-radius: 0.3rem;
+    background: var(--color-disabled-bg);
+    min-height: 8rem;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+  }
+
+  .page-announcement {
+    margin: 0.75rem 0 0;
+    color: var(--color-muted);
+  }
+
+  .player {
+    border: 1px solid var(--color-border);
+    border-radius: 0.6rem;
+    padding: 1rem;
+    flex: 1 1 18rem;
+    margin: 0;
+  }
+
+  .controls-row,
+  .speed-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .speed-row {
+    margin-top: 1rem;
+    justify-content: center;
+  }
+
+  button {
+    font: inherit;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-primary-bg);
+    border-radius: 0.4rem;
+    background: var(--color-primary-bg);
+    color: var(--color-primary-text);
+    cursor: pointer;
+  }
+
+  button:hover:not(:disabled) {
+    background: #16283f;
+  }
+
+  button:disabled {
+    background: var(--color-disabled-bg);
+    color: var(--color-disabled-text);
+    border-color: var(--color-disabled-bg);
+    cursor: not-allowed;
+  }
+
+  #btn-play {
+    min-width: 7rem;
+    font-weight: 600;
+  }
+
+  #btn-produce {
+    margin-top: 0.5rem;
+  }
+
+  button:focus-visible,
+  select:focus-visible,
+  input:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 3px;
+  }
+
+  .seek-row {
+    margin-top: 1rem;
+  }
+
+  #seek-bar {
+    width: 100%;
+    height: 2rem;
+    cursor: pointer;
+  }
+
+  #seek-bar:disabled {
+    cursor: not-allowed;
+  }
+
+  .time-display {
+    text-align: center;
+    margin: 0.5rem 0 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .segment-display {
+    text-align: center;
+    margin: 0.75rem 0 0;
+    min-height: 1.2em;
+    color: var(--color-muted);
+  }
+
+  #speed-display {
+    min-width: 8rem;
+    text-align: center;
+    margin: 0;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Manga Access AI — Démonstration</h1>
+  <p class="intro">
+    Choisis un manga Manga109-s, lance la production, puis écoute le
+    résultat avec les pages manga synchronisées.
+  </p>
+
+  <div class="file-picker">
+    <label for="manga-select">Choisir un manga</label>
+    <select id="manga-select" disabled></select>
+  </div>
+
+  <div class="file-picker">
+    <label for="pages-input">Nombre de pages (optionnel, laisser vide pour tout le manga)</label>
+    <input type="number" id="pages-input" min="1" value="3">
+  </div>
+
+  <button id="btn-produce" type="button" disabled>Produire l'audio</button>
+
+  <p id="status-message" role="status"></p>
+  <progress id="progress-bar" class="progress-bar" hidden></progress>
+  <div
+    id="log-output"
+    class="log-output"
+    role="log"
+    aria-live="polite"
+    aria-label="Journal de production"
+    hidden
+  ></div>
+
+  <details class="shortcuts-help">
+    <summary>Raccourcis clavier</summary>
+    <ul>
+      <li><kbd>Espace</kbd> — Lecture / Pause</li>
+      <li><kbd>&larr;</kbd> / <kbd>&rarr;</kbd> — Reculer / avancer de 5 secondes</li>
+      <li><kbd>Maj</kbd>+<kbd>&larr;</kbd> / <kbd>Maj</kbd>+<kbd>&rarr;</kbd> — Reculer / avancer de 10 secondes</li>
+      <li><kbd>[</kbd> / <kbd>]</kbd> — Diminuer / augmenter la vitesse (0.5x à 2.0x)</li>
+      <li><kbd>Origine (Home)</kbd> — Retour au début</li>
+      <li><kbd>M</kbd> — Couper / réactiver le son</li>
+      <li><kbd>P</kbd> / <kbd>N</kbd> — Page manga précédente / suivante (indépendant de l'audio)</li>
+    </ul>
+  </details>
+
+  <div class="layout" id="player-layout" hidden>
+    <figure
+      id="manga-page-figure"
+      class="manga-page-figure"
+      aria-label="Page manga en cours"
+      hidden
+    >
+      <img id="manga-page" alt="">
+      <p id="page-announcement" class="page-announcement" aria-live="polite"></p>
+    </figure>
+
+    <section
+      id="player"
+      class="player"
+      role="application"
+      aria-label="Lecteur audio manga accessible, raccourcis clavier actifs"
+    >
+      <div class="controls-row">
+        <button id="btn-restart" type="button" aria-label="Retour au début" disabled>⏮ Début</button>
+        <button id="btn-back10" type="button" aria-label="Reculer de 10 secondes" disabled>⏪ 10s</button>
+        <button id="btn-back5" type="button" aria-label="Reculer de 5 secondes" disabled>⏪ 5s</button>
+        <button id="btn-play" type="button" aria-label="Lecture" aria-pressed="false" disabled>▶ Lecture</button>
+        <button id="btn-forward5" type="button" aria-label="Avancer de 5 secondes" disabled>5s ⏩</button>
+        <button id="btn-forward10" type="button" aria-label="Avancer de 10 secondes" disabled>10s ⏩</button>
+        <button id="btn-mute" type="button" aria-label="Couper le son" aria-pressed="false" disabled>🔊 Son</button>
+      </div>
+
+      <div class="seek-row">
+        <label for="seek-bar" class="visually-hidden">Position de lecture</label>
+        <input
+          type="range"
+          id="seek-bar"
+          min="0"
+          max="0"
+          step="0.1"
+          value="0"
+          aria-label="Position de lecture"
+          disabled
+        >
+        <p id="time-display" class="time-display" aria-live="polite">00:00 / 00:00</p>
+      </div>
+
+      <p id="segment-display" class="segment-display" aria-live="polite">Aucune timeline chargée.</p>
+
+      <div class="speed-row">
+        <button id="btn-speed-down" type="button" aria-label="Diminuer la vitesse de lecture" disabled>– Vitesse</button>
+        <p id="speed-display" aria-live="polite">Vitesse : 1.0x</p>
+        <button id="btn-speed-up" type="button" aria-label="Augmenter la vitesse de lecture" disabled>+ Vitesse</button>
+      </div>
+    </section>
+  </div>
+
+  <audio id="audio" preload="metadata"></audio>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const MIN_SPEED = 0.5;
+  const MAX_SPEED = 2.0;
+  const SPEED_STEP = 0.1;
+  const SHORT_SKIP_S = 5;
+  const LONG_SKIP_S = 10;
+
+  const audio = document.getElementById("audio");
+  const mangaSelect = document.getElementById("manga-select");
+  const pagesInput = document.getElementById("pages-input");
+  const btnProduce = document.getElementById("btn-produce");
+  const statusMessage = document.getElementById("status-message");
+  const progressBar = document.getElementById("progress-bar");
+  const logOutput = document.getElementById("log-output");
+  const playerLayout = document.getElementById("player-layout");
+  const player = document.getElementById("player");
+  const mangaPageFigure = document.getElementById("manga-page-figure");
+  const mangaPageImg = document.getElementById("manga-page");
+  const pageAnnouncement = document.getElementById("page-announcement");
+
+  const btnPlay = document.getElementById("btn-play");
+  const btnRestart = document.getElementById("btn-restart");
+  const btnBack5 = document.getElementById("btn-back5");
+  const btnBack10 = document.getElementById("btn-back10");
+  const btnForward5 = document.getElementById("btn-forward5");
+  const btnForward10 = document.getElementById("btn-forward10");
+  const btnMute = document.getElementById("btn-mute");
+  const btnSpeedDown = document.getElementById("btn-speed-down");
+  const btnSpeedUp = document.getElementById("btn-speed-up");
+
+  const seekBar = document.getElementById("seek-bar");
+  const timeDisplay = document.getElementById("time-display");
+  const speedDisplay = document.getElementById("speed-display");
+  const segmentDisplay = document.getElementById("segment-display");
+
+  const controlButtons = [
+    btnPlay, btnRestart, btnBack5, btnBack10,
+    btnForward5, btnForward10, btnMute, btnSpeedDown, btnSpeedUp,
+  ];
+
+  let currentObjectUrl = null;
+  let lastDisplayedSecond = -1;
+  let timelineSegments = [];
+  let currentSegmentIndex = -1;
+  let imageObjectUrls = [];
+  let currentPageIndex = -1;
+  let currentEventSource = null;
+
+  function formatTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+
+  function setControlsEnabled(enabled) {
+    controlButtons.forEach((btn) => { btn.disabled = !enabled; });
+    seekBar.disabled = !enabled;
+  }
+
+  function updatePlayButton() {
+    const playing = !audio.paused && !audio.ended;
+    btnPlay.textContent = playing ? "⏸ Pause" : "▶ Lecture";
+    btnPlay.setAttribute("aria-label", playing ? "Pause" : "Lecture");
+    btnPlay.setAttribute("aria-pressed", String(playing));
+  }
+
+  function updateMuteButton() {
+    const muted = audio.muted;
+    btnMute.textContent = muted ? "🔇 Muet" : "🔊 Son";
+    btnMute.setAttribute("aria-label", muted ? "Réactiver le son" : "Couper le son");
+    btnMute.setAttribute("aria-pressed", String(muted));
+  }
+
+  function updateSpeedDisplay() {
+    speedDisplay.textContent = "Vitesse : " + audio.playbackRate.toFixed(1) + "x";
+  }
+
+  function updateTimeDisplay(force) {
+    const currentSecond = Math.floor(audio.currentTime || 0);
+    if (!force && currentSecond === lastDisplayedSecond) return;
+    lastDisplayedSecond = currentSecond;
+    timeDisplay.textContent = formatTime(audio.currentTime) + " / " + formatTime(audio.duration);
+  }
+
+  function resetTimeline() {
+    timelineSegments = [];
+    currentSegmentIndex = -1;
+    segmentDisplay.textContent = "Aucune timeline chargée.";
+  }
+
+  function findSegmentIndex(currentMs) {
+    if (timelineSegments.length === 0) return -1;
+
+    if (currentSegmentIndex >= 0) {
+      const current = timelineSegments[currentSegmentIndex];
+      if (currentMs >= current.start_ms && currentMs < current.end_ms) {
+        return currentSegmentIndex;
+      }
+    }
+
+    for (let i = 0; i < timelineSegments.length; i++) {
+      const segment = timelineSegments[i];
+      if (currentMs >= segment.start_ms && currentMs < segment.end_ms) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  function updateCurrentSegment() {
+    if (timelineSegments.length === 0) return;
+
+    const currentMs = audio.currentTime * 1000;
+    const index = findSegmentIndex(currentMs);
+    if (index === currentSegmentIndex) return;
+    currentSegmentIndex = index;
+
+    if (index === -1) {
+      segmentDisplay.textContent = "";
+      return;
+    }
+    const segment = timelineSegments[index];
+    segmentDisplay.textContent = "[" + segment.kind.toUpperCase() + "] " + segment.text;
+    const pageIndex = typeof segment.page_index === "number" ? segment.page_index : 0;
+    showPage(pageIndex);
+  }
+
+  function showPage(pageIndex) {
+    if (imageObjectUrls.length === 0) return;
+    const clamped = Math.min(Math.max(pageIndex, 0), imageObjectUrls.length - 1);
+    if (clamped === currentPageIndex) return;
+    currentPageIndex = clamped;
+
+    mangaPageImg.style.opacity = "0";
+    mangaPageImg.src = imageObjectUrls[clamped];
+    mangaPageImg.alt = "Page manga " + (clamped + 1);
+    pageAnnouncement.textContent = "Page " + (clamped + 1) + " sur " + imageObjectUrls.length;
+  }
+
+  function stepPage(delta) {
+    if (imageObjectUrls.length === 0) return;
+    showPage((currentPageIndex === -1 ? 0 : currentPageIndex) + delta);
+  }
+
+  mangaPageImg.addEventListener("load", () => {
+    mangaPageImg.style.opacity = "1";
+  });
+
+  function setStatus(message, isError) {
+    statusMessage.textContent = message;
+    statusMessage.classList.toggle("error", Boolean(isError));
+  }
+
+  function appendLog(line) {
+    logOutput.textContent += line + "\n";
+    logOutput.scrollTop = logOutput.scrollHeight;
+  }
+
+  function togglePlayPause() {
+    if (!audio.src) return;
+    if (audio.paused || audio.ended) {
+      audio.play();
+    } else {
+      audio.pause();
+    }
+  }
+
+  function seekBy(deltaSeconds) {
+    if (!audio.src || !Number.isFinite(audio.duration)) return;
+    const next = Math.min(Math.max(audio.currentTime + deltaSeconds, 0), audio.duration);
+    audio.currentTime = next;
+    updateTimeDisplay(true);
+  }
+
+  function seekTo(seconds) {
+    if (!audio.src || !Number.isFinite(audio.duration)) return;
+    audio.currentTime = Math.min(Math.max(seconds, 0), audio.duration);
+    updateTimeDisplay(true);
+  }
+
+  function changeSpeed(deltaSpeed) {
+    if (!audio.src) return;
+    const next = Math.min(
+      Math.max(audio.playbackRate + deltaSpeed, MIN_SPEED),
+      MAX_SPEED
+    );
+    audio.playbackRate = Math.round(next * 10) / 10;
+    updateSpeedDisplay();
+  }
+
+  function toggleMute() {
+    if (!audio.src) return;
+    audio.muted = !audio.muted;
+    updateMuteButton();
+  }
+
+  audio.addEventListener("loadedmetadata", () => {
+    seekBar.max = String(audio.duration);
+    seekBar.value = "0";
+    updateTimeDisplay(true);
+    setControlsEnabled(true);
+  });
+
+  audio.addEventListener("error", () => {
+    setControlsEnabled(false);
+    setStatus("Erreur : impossible de lire le fichier audio produit.", true);
+  });
+
+  audio.addEventListener("timeupdate", () => {
+    if (!seekBar.matches(":active")) {
+      seekBar.value = String(audio.currentTime);
+    }
+    updateTimeDisplay(false);
+    updateCurrentSegment();
+  });
+
+  audio.addEventListener("play", updatePlayButton);
+  audio.addEventListener("pause", updatePlayButton);
+  audio.addEventListener("ended", updatePlayButton);
+
+  btnPlay.addEventListener("click", togglePlayPause);
+  btnRestart.addEventListener("click", () => seekTo(0));
+  btnBack5.addEventListener("click", () => seekBy(-SHORT_SKIP_S));
+  btnBack10.addEventListener("click", () => seekBy(-LONG_SKIP_S));
+  btnForward5.addEventListener("click", () => seekBy(SHORT_SKIP_S));
+  btnForward10.addEventListener("click", () => seekBy(LONG_SKIP_S));
+  btnMute.addEventListener("click", toggleMute);
+  btnSpeedDown.addEventListener("click", () => changeSpeed(-SPEED_STEP));
+  btnSpeedUp.addEventListener("click", () => changeSpeed(SPEED_STEP));
+
+  seekBar.addEventListener("input", () => {
+    seekTo(seekBar.valueAsNumber);
+  });
+
+  player.addEventListener("keydown", (event) => {
+    if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+    switch (event.key) {
+      case " ":
+      case "Spacebar":
+        event.preventDefault();
+        togglePlayPause();
+        break;
+      case "ArrowLeft":
+        event.preventDefault();
+        seekBy(event.shiftKey ? -LONG_SKIP_S : -SHORT_SKIP_S);
+        break;
+      case "ArrowRight":
+        event.preventDefault();
+        seekBy(event.shiftKey ? LONG_SKIP_S : SHORT_SKIP_S);
+        break;
+      case "[":
+        event.preventDefault();
+        changeSpeed(-SPEED_STEP);
+        break;
+      case "]":
+        event.preventDefault();
+        changeSpeed(SPEED_STEP);
+        break;
+      case "Home":
+        event.preventDefault();
+        seekTo(0);
+        break;
+      case "m":
+      case "M":
+        event.preventDefault();
+        toggleMute();
+        break;
+      case "p":
+      case "P":
+        event.preventDefault();
+        stepPage(-1);
+        break;
+      case "n":
+      case "N":
+        event.preventDefault();
+        stepPage(1);
+        break;
+      default:
+        break;
+    }
+  });
+
+  // --- Chargement de la liste des mangas ---
+
+  async function loadMangaList() {
+    try {
+      const response = await fetch("/api/mangas");
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const mangas = await response.json();
+      mangaSelect.innerHTML = "";
+      for (const manga of mangas) {
+        const option = document.createElement("option");
+        option.value = manga.title;
+        option.textContent = manga.title + " (" + manga.page_count + " pages)";
+        mangaSelect.appendChild(option);
+      }
+      mangaSelect.disabled = mangas.length === 0;
+      btnProduce.disabled = mangas.length === 0;
+      if (mangas.length === 0) {
+        setStatus("Aucun manga disponible dans Manga109-s.", true);
+      }
+    } catch (error) {
+      setStatus("Erreur : impossible de charger la liste des mangas (" + error.message + ").", true);
+    }
+  }
+
+  // --- Chargement du résultat produit (audio, timeline, pages) ---
+
+  async function loadResults(jobId) {
+    setStatus("Chargement du résultat…");
+
+    const audioResponse = await fetch("/api/audio/" + jobId);
+    if (!audioResponse.ok) {
+      setStatus("Erreur : audio introuvable pour ce job.", true);
+      return;
+    }
+    const audioBlob = await audioResponse.blob();
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = URL.createObjectURL(audioBlob);
+
+    audio.pause();
+    audio.src = currentObjectUrl;
+    audio.playbackRate = 1.0;
+    audio.muted = false;
+    lastDisplayedSecond = -1;
+    resetTimeline();
+    updatePlayButton();
+    updateMuteButton();
+    updateSpeedDisplay();
+    setControlsEnabled(false);
+
+    const timelineResponse = await fetch("/api/timeline/" + jobId);
+    const timelineData = await timelineResponse.json();
+    timelineSegments = timelineData.segments;
+    currentSegmentIndex = -1;
+    segmentDisplay.textContent = "";
+
+    const pageCount = timelineSegments.length === 0 ? 0 : Math.max(
+      ...timelineSegments.map((s) => (typeof s.page_index === "number" ? s.page_index : 0))
+    ) + 1;
+
+    imageObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    imageObjectUrls = [];
+    for (let i = 0; i < pageCount; i++) {
+      const pageResponse = await fetch("/api/page/" + jobId + "/" + i);
+      const pageBlob = await pageResponse.blob();
+      imageObjectUrls.push(URL.createObjectURL(pageBlob));
+    }
+    currentPageIndex = -1;
+
+    if (imageObjectUrls.length > 0) {
+      mangaPageFigure.hidden = false;
+      showPage(0);
+    }
+    playerLayout.hidden = false;
+
+    setStatus("Résultat prêt : " + pageCount + " page(s).");
+  }
+
+  // --- Production ---
+
+  btnProduce.addEventListener("click", async () => {
+    const mangaTitle = mangaSelect.value;
+    if (!mangaTitle) return;
+    const pagesValue = pagesInput.value.trim() === "" ? null : parseInt(pagesInput.value, 10);
+
+    if (currentEventSource) {
+      currentEventSource.close();
+      currentEventSource = null;
+    }
+
+    btnProduce.disabled = true;
+    mangaSelect.disabled = true;
+    logOutput.textContent = "";
+    logOutput.hidden = false;
+    progressBar.hidden = false;
+    playerLayout.hidden = true;
+    setStatus("Lancement de la production pour « " + mangaTitle + " »…");
+
+    let jobId;
+    try {
+      const response = await fetch("/api/produce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          manga_title: mangaTitle,
+          pages: pagesValue,
+          narration_lang: "fr",
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || ("HTTP " + response.status));
+      }
+      const data = await response.json();
+      jobId = data.job_id;
+    } catch (error) {
+      setStatus("Erreur : " + error.message, true);
+      progressBar.hidden = true;
+      btnProduce.disabled = false;
+      mangaSelect.disabled = false;
+      return;
+    }
+
+    const source = new EventSource("/api/status/" + jobId);
+    currentEventSource = source;
+
+    source.onmessage = (event) => {
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch (error) {
+        return;
+      }
+
+      if (payload.type === "log") {
+        appendLog(payload.message);
+      } else if (payload.type === "status") {
+        source.close();
+        currentEventSource = null;
+        progressBar.hidden = true;
+        btnProduce.disabled = false;
+        mangaSelect.disabled = false;
+
+        if (payload.status === "done") {
+          loadResults(jobId);
+        } else {
+          setStatus(
+            "Erreur pendant la production" + (payload.error ? " : " + payload.error : "") + ".",
+            true
+          );
+        }
+      }
+    };
+
+    source.onerror = () => {
+      source.close();
+      currentEventSource = null;
+      progressBar.hidden = true;
+      btnProduce.disabled = false;
+      mangaSelect.disabled = false;
+      setStatus("Connexion au flux de logs perdue.", true);
+    };
+  });
+
+  loadMangaList();
+})();
+</script>
+</body>
+</html>

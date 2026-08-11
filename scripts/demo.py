@@ -37,21 +37,16 @@ except ImportError as exc:
     )
     raise SystemExit(1) from exc
 
-from manga_access.pipeline.audio_assembler import assemble_audio, save_timeline, save_transcript
+from manga_access.pipeline.audio_assembler import (
+    assemble_audio,
+    save_timeline,
+    save_transcript,
+)
 from manga_access.pipeline.chapter_processor import ChapterProcessor
 from manga_access.pipeline.character_bank import load_character_bank
+from manga_access.pipeline.image_source import find_images
 from manga_access.pipeline.narrative_builder import build_narrative_script
 from manga_access.schemas.narrative_script import NarrativeScript
-
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-
-
-def find_images(folder: Path, limit: int | None = None) -> list[Path]:
-    """Retourne les images de `folder`, triées par nom (ordre de lecture), tronquées à `limit`."""
-    images = sorted(p for p in folder.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
-    if not images:
-        raise ValueError(f"aucune image trouvée dans {folder}")
-    return images[:limit] if limit is not None else images
 
 
 def merge_narrative_scripts(scripts: list[NarrativeScript], source: dict) -> NarrativeScript:

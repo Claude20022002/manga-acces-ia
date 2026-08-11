@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import re
 import time
+import unicodedata
 from pathlib import Path
 
 from loguru import logger
@@ -60,8 +61,19 @@ def _clean_japanese_text(text: str) -> str:
     Normalise les points de suspension pleine chasse ('．．．' -> '、') et
     réduit les répétitions de ponctuation ('！！' -> '！', '？？' -> '？')
     avant passage au G2P de Kokoro (misaki) — cas réels observés dans
-    data/outputs/benchmark_v6/transcripts/2-1.txt.
+    data/outputs/benchmark_v6/transcripts/2-1.txt. Normalise d'abord en
+    NFKC les lettres/chiffres pleine chasse (fullwidth latin, ex.
+    "Ｗｏｒｄｏｗｓ") — sans ça, Kokoro les épelle lettre par lettre au lieu de
+    lire le mot, et le texte inutilement long déclenche la troncature à 510
+    phonèmes. Caractère par caractère (`ch.isalnum()`), pas sur toute la
+    chaîne : ponctuation pleine chasse ("．", "！", "？") a aussi une forme
+    NFKC (ASCII), ce qui casserait le nettoyage ci-dessous si on
+    normalisait tout d'un coup (il cherche spécifiquement ces caractères
+    pleine chasse).
     """
+    text = "".join(
+        unicodedata.normalize("NFKC", ch) if ch.isalnum() else ch for ch in text
+    )
     text = text.replace("．", "。")
     text = re.sub(r"[。、]{2,}", "、", text)
     text = re.sub(r"！{2,}", "！", text)
