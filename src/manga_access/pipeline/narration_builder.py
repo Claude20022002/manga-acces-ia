@@ -51,14 +51,22 @@ def _narrator_segment(text: str, lang: str, source: NarrativeSegment) -> Narrati
     )
 
 
-def _dialogue_segments(segment: NarrativeSegment, lang: str) -> list[NarrativeSegment]:
+def _dialogue_segments(
+    segment: NarrativeSegment, lang: str, same_speaker_as_previous: bool
+) -> list[NarrativeSegment]:
     """Entoure un dialogue (inchangé) d'un segment de narration contextuel.
 
-    fr et ja speaker inconnu : narration avant (préfixe). ja speaker connu :
-    narration après (suffixe) — "{texte}、と言った" est une proposition
-    rapportée qui suit la citation en japonais, gabarit conservé tel quel
-    depuis la Phase D plutôt que d'inventer une formulation en préfixe.
+    `same_speaker_as_previous` (comparaison par voice_id — cf. docstring de
+    enrich_script pour la limite connue) supprime le segment de narration :
+    un même personnage qui enchaîne plusieurs répliques ne se voit annoncé
+    qu'une fois. fr et ja speaker inconnu : narration avant (préfixe). ja
+    speaker connu : narration après (suffixe) — "{texte}、と言った" est une
+    proposition rapportée qui suit la citation en japonais, gabarit conservé
+    tel quel depuis la Phase D plutôt que d'inventer une formulation en préfixe.
     """
+    if same_speaker_as_previous:
+        return [segment]
+
     if segment.voice_id == VOICE_UNKNOWN:
         prefix = "Une voix dit :" if lang == "fr" else "声が言った："
         return [_narrator_segment(prefix, lang, segment), segment]
@@ -92,9 +100,19 @@ def enrich_script(script: NarrativeScript, lang: str = "fr") -> NarrativeScript:
     (`ff_siwis` en fr, VOICE_NARRATOR en ja), sont insérés autour d'eux —
     c'est ce qui permet à assemble_audio() de synthétiser le préfixe/suffixe
     avec la voix du narrateur et le dialogue/sfx avec sa propre voix.
-    narration, scene_description et thought ne sont jamais modifiés ni
-    entourés (scene_description est toujours généré en français par
-    Qwen3-VL, quel que soit `lang` ; thought est hors périmètre).
+    Un dialogue n'est annoncé que lors d'un changement de locuteur : la
+    comparaison se fait par `voice_id` (NarrativeSegment n'a pas de
+    speaker_id — narrative_builder.py le résout déjà en voix concrète en
+    amont) contre le `voice_id` du dialogue précédent dans le script
+    (narration/sfx/scene_description intercalés n'interrompent pas le
+    suivi). Limite connue : le pool ne compte que 3 voix japonaises
+    (cluster_id % 3), donc deux personnages distincts dont les cluster_id
+    tombent dans la même classe modulo 3 partagent un voice_id et seraient
+    à tort traités comme le même locuteur — risque jugé acceptable pour
+    l'instant. SFX est toujours annoncé, à chaque occurrence (pas de suivi
+    de locuteur). narration, scene_description et thought ne sont jamais
+    modifiés ni entourés (scene_description est toujours généré en français
+    par Qwen3-VL, quel que soit `lang` ; thought est hors périmètre).
 
     Retourne `script` (même instance ; `script.segments` est remplacé par
     une nouvelle liste, mais les segments d'origine non transformés y sont
@@ -104,9 +122,12 @@ def enrich_script(script: NarrativeScript, lang: str = "fr") -> NarrativeScript:
         raise ValueError(f"lang non supporté : {lang!r} (attendu : {_SUPPORTED_LANGS})")
 
     enriched_segments: list[NarrativeSegment] = []
+    last_dialogue_voice_id: str | None = None
     for segment in script.segments:
         if segment.kind == "dialogue":
-            enriched_segments.extend(_dialogue_segments(segment, lang))
+            same_speaker = segment.voice_id == last_dialogue_voice_id
+            enriched_segments.extend(_dialogue_segments(segment, lang, same_speaker))
+            last_dialogue_voice_id = segment.voice_id
         elif segment.kind == "sfx":
             enriched_segments.extend(_sfx_segments(segment, lang))
         else:
