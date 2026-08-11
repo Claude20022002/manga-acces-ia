@@ -43,6 +43,6 @@ directement un modèle — toujours passer par l'interface du backend.
 - Proposer des alternatives à la stack décidée sans justification technique précise
 - Écrire du code de production avant que les tests de la phase courante passent
 
-## Phase actuelle : 0 — Socle
+## Phase actuelle : 7 — Voix distinctes (complète)
 Objectif : environnement reproductible + harnais de test + baseline naïve
 Voir docs/phases/phase-0.md pour le détail des tâches.
