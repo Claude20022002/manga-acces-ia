@@ -44,6 +44,7 @@ class ProduceRequest(BaseModel):
     pages: int | None = None
     narration_lang: str = "fr"
     start_page: int = 0
+    character_bank_json: str | None = None
 
 
 class ProduceResponse(BaseModel):
@@ -87,7 +88,11 @@ async def produce(request: ProduceRequest) -> ProduceResponse:
     """Lance scripts/demo.py sur le manga demandé, en arrière-plan (sous-processus)."""
     try:
         job = await jobs.start_job(
-            request.manga_title, request.pages, request.narration_lang, request.start_page
+            request.manga_title,
+            request.pages,
+            request.narration_lang,
+            request.start_page,
+            request.character_bank_json,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

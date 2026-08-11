@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manga Access AI — Démonstration</title>
+<title>Manga Access AI</title>
 <style>
   :root {
     --color-bg: #ffffff;
@@ -289,6 +289,11 @@
     </select>
   </div>
 
+  <div class="file-picker">
+    <label for="character-bank-input">Character bank (JSON, optionnel)</label>
+    <input type="file" id="character-bank-input" accept=".json,application/json">
+  </div>
+
   <button id="btn-produce" type="button" disabled>Produire l'audio</button>
 
   <p id="status-message" role="status"></p>
@@ -385,6 +390,7 @@
   const startPageInput = document.getElementById("start-page-input");
   const pagesInput = document.getElementById("pages-input");
   const langSelect = document.getElementById("lang-select");
+  const characterBankInput = document.getElementById("character-bank-input");
   const btnProduce = document.getElementById("btn-produce");
   const statusMessage = document.getElementById("status-message");
   const progressBar = document.getElementById("progress-bar");
@@ -746,6 +752,18 @@
     // l'API attend un offset 0-indexé, cohérent avec page_index partout ailleurs.
     const startPageValue = Math.max(0, (parseInt(startPageInput.value, 10) || 1) - 1);
 
+    let characterBankJson = null;
+    const characterBankFile = characterBankInput.files[0];
+    if (characterBankFile) {
+      try {
+        characterBankJson = await characterBankFile.text();
+        JSON.parse(characterBankJson); // validation basique côté client
+      } catch (error) {
+        setStatus("Erreur : fichier character bank invalide (JSON mal formé).", true);
+        return;
+      }
+    }
+
     if (currentEventSource) {
       currentEventSource.close();
       currentEventSource = null;
@@ -769,6 +787,7 @@
           pages: pagesValue,
           narration_lang: langSelect.value,
           start_page: startPageValue,
+          character_bank_json: characterBankJson,
         }),
       });
       if (!response.ok) {

@@ -96,6 +96,35 @@ def test_character_bank_for_title_not_found(tmp_path: Path, monkeypatch: pytest.
     assert jobs_module._character_bank_for_title("Unknown") is None
 
 
+def test_write_uploaded_character_bank_valid(tmp_path: Path) -> None:
+    payload = json.dumps({"names": ["Naruto"], "image_paths": ["/abs/naruto.jpg"]})
+
+    result_path = jobs_module._write_uploaded_character_bank(payload, tmp_path)
+
+    assert result_path == tmp_path / "character_bank.json"
+    assert json.loads(result_path.read_text(encoding="utf-8")) == {
+        "names": ["Naruto"],
+        "image_paths": ["/abs/naruto.jpg"],
+    }
+
+
+def test_write_uploaded_character_bank_invalid_json_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="invalide"):
+        jobs_module._write_uploaded_character_bank("not json{", tmp_path)
+
+
+def test_write_uploaded_character_bank_missing_keys_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="manquantes"):
+        jobs_module._write_uploaded_character_bank(json.dumps({"foo": "bar"}), tmp_path)
+
+
+def test_write_uploaded_character_bank_mismatched_lengths_raises(tmp_path: Path) -> None:
+    payload = json.dumps({"names": ["Naruto", "Sasuke"], "image_paths": ["/abs/naruto.jpg"]})
+
+    with pytest.raises(ValueError, match="nom.*image"):
+        jobs_module._write_uploaded_character_bank(payload, tmp_path)
+
+
 # --- GET /api/mangas ---
 
 
@@ -129,7 +158,11 @@ def test_produce_returns_job_id(
     client: TestClient, manga_root: Path, output_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def fake_start_job(
-        manga_title: str, pages: int | None, narration_lang: str, start_page: int = 0
+        manga_title: str,
+        pages: int | None,
+        narration_lang: str,
+        start_page: int = 0,
+        character_bank_json: str | None = None,
     ) -> jobs_module.Job:
         return _make_job("fake-job-id", output_root / "fake-job-id", manga_title=manga_title, status="running")
 
@@ -148,7 +181,11 @@ def test_produce_passes_start_page_through_to_start_job(
     received: dict[str, object] = {}
 
     async def fake_start_job(
-        manga_title: str, pages: int | None, narration_lang: str, start_page: int = 0
+        manga_title: str,
+        pages: int | None,
+        narration_lang: str,
+        start_page: int = 0,
+        character_bank_json: str | None = None,
     ) -> jobs_module.Job:
         received["start_page"] = start_page
         return _make_job("fake-job-id", output_root / "fake-job-id", manga_title=manga_title, status="running")
@@ -161,6 +198,57 @@ def test_produce_passes_start_page_through_to_start_job(
 
     assert response.status_code == 200
     assert received["start_page"] == 9
+
+
+def test_produce_passes_character_bank_json_through_to_start_job(
+    client: TestClient, manga_root: Path, output_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """character_bank_json du corps de la requête est bien transmis à jobs.start_job."""
+    received: dict[str, object] = {}
+    bank_json = json.dumps({"names": ["Naruto"], "image_paths": ["/abs/naruto.jpg"]})
+
+    async def fake_start_job(
+        manga_title: str,
+        pages: int | None,
+        narration_lang: str,
+        start_page: int = 0,
+        character_bank_json: str | None = None,
+    ) -> jobs_module.Job:
+        received["character_bank_json"] = character_bank_json
+        return _make_job("fake-job-id", output_root / "fake-job-id", manga_title=manga_title, status="running")
+
+    monkeypatch.setattr(jobs_module, "start_job", fake_start_job)
+
+    response = client.post(
+        "/api/produce", json={"manga_title": "TestManga", "character_bank_json": bank_json}
+    )
+
+    assert response.status_code == 200
+    assert received["character_bank_json"] == bank_json
+
+
+def test_produce_defaults_character_bank_json_to_none(
+    client: TestClient, manga_root: Path, output_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sans character_bank_json dans le corps, jobs.start_job le reçoit à None (pas de régression)."""
+    received: dict[str, object] = {"character_bank_json": "not-set"}
+
+    async def fake_start_job(
+        manga_title: str,
+        pages: int | None,
+        narration_lang: str,
+        start_page: int = 0,
+        character_bank_json: str | None = None,
+    ) -> jobs_module.Job:
+        received["character_bank_json"] = character_bank_json
+        return _make_job("fake-job-id", output_root / "fake-job-id", manga_title=manga_title, status="running")
+
+    monkeypatch.setattr(jobs_module, "start_job", fake_start_job)
+
+    response = client.post("/api/produce", json={"manga_title": "TestManga"})
+
+    assert response.status_code == 200
+    assert received["character_bank_json"] is None
 
 
 def test_produce_unknown_manga_returns_400(client: TestClient, manga_root: Path) -> None:

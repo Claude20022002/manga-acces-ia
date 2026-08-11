@@ -8,6 +8,7 @@ pour la justification vs SQLite (stack décidé, réservé au contenu durable).
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -69,8 +70,46 @@ def _character_bank_for_title(title: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _write_uploaded_character_bank(character_bank_json: str, output_dir: Path) -> Path:
+    """Valide la structure minimale du JSON uploadé et l'écrit dans le dossier du job.
+
+    Même validation que `load_character_bank()` (character_bank.py), mais
+    sans charger les images — juste la structure, avant de committer sur
+    disque un fichier potentiellement invalide fourni par l'utilisateur.
+    Les chemins d'images à l'intérieur doivent déjà être absolus et exister
+    sur le serveur (cf. `scripts/create_character_bank.py`) : réécrire ce
+    JSON dans `output_dir` casserait des chemins relatifs à un autre
+    dossier — pas un problème pour un bank produit par ce script, mais une
+    vraie limite pour un bank écrit à la main avec des chemins relatifs.
+    """
+    try:
+        data = json.loads(character_bank_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"character_bank JSON invalide : {exc}") from exc
+    names = data.get("names")
+    image_paths = data.get("image_paths")
+    if not isinstance(names, list) or not isinstance(image_paths, list):
+        # ValueError (pas TypeError) volontaire : produce() (api/app.py) attrape
+        # uniformément ValueError pour toute character_bank uploadée invalide et la
+        # retourne en 400 — un TypeError ici échapperait à ce handler (500 nu).
+        raise ValueError(  # noqa: TRY004
+            "character_bank JSON invalide : clés 'names'/'image_paths' manquantes"
+        )
+    if len(names) != len(image_paths):
+        raise ValueError(
+            f"character_bank JSON invalide : {len(names)} nom(s) pour {len(image_paths)} image(s)"
+        )
+    bank_path = output_dir / "character_bank.json"
+    bank_path.write_text(character_bank_json, encoding="utf-8")
+    return bank_path
+
+
 async def start_job(
-    manga_title: str, pages: int | None, narration_lang: str, start_page: int = 0
+    manga_title: str,
+    pages: int | None,
+    narration_lang: str,
+    start_page: int = 0,
+    character_bank_json: str | None = None,
 ) -> Job:
     """Valide `manga_title`, crée un job et lance scripts/demo.py dessus en sous-processus.
 
@@ -80,6 +119,9 @@ async def start_job(
     `find_images` que demo.py utilisera lui-même en interne — les deux
     doivent produire exactement la même liste pour que `page_index` dans la
     timeline corresponde à la bonne image servie par `/api/page`.
+    `character_bank_json` (contenu JSON uploadé par l'utilisateur, cf.
+    app.html) est prioritaire sur l'auto-détection par titre
+    (`_character_bank_for_title`) si fourni.
     """
     images_dir = resolve_manga_dir(manga_title)
     image_paths = find_images(images_dir, limit=pages, start=start_page)
@@ -111,7 +153,11 @@ async def start_job(
     ]
     if pages is not None:
         command += ["--pages", str(pages)]
-    character_bank_path = _character_bank_for_title(manga_title)
+    character_bank_path: Path | None
+    if character_bank_json is not None:
+        character_bank_path = _write_uploaded_character_bank(character_bank_json, output_dir)
+    else:
+        character_bank_path = _character_bank_for_title(manga_title)
     if character_bank_path is not None:
         command += ["--character-bank", str(character_bank_path)]
 
