@@ -48,6 +48,7 @@ def _narrator_segment(text: str, lang: str, source: NarrativeSegment) -> Narrati
         kind="narration",
         voice_id=_NARRATOR_VOICE_BY_LANG[lang],
         text=text,
+        page_index=source.page_index,
     )
 
 

@@ -50,6 +50,7 @@ def _segments_for_panel(
     panel: Panel,
     character_voices: dict[str, str],
     character_names: dict[str, str],
+    page_index: int,
     last_scene_description: str | None,
 ) -> tuple[list[NarrativeSegment], str | None]:
     """Construit les segments narratifs d'un panel : description de scène (si nouvelle) puis éléments.
@@ -71,6 +72,7 @@ def _segments_for_panel(
                 kind="scene_description",
                 voice_id=VOICE_NARRATOR,
                 text=panel.scene_description,
+                page_index=page_index,
             )
         )
         last_scene_description = panel.scene_description
@@ -90,6 +92,7 @@ def _segments_for_panel(
                 text=_text_for_element(element),
                 source_element_id=element.id,
                 character_name=character_name,
+                page_index=page_index,
             )
         )
 
@@ -110,13 +113,14 @@ def build_narrative_script(page: MangaPage) -> NarrativeScript:
     character_names = {
         character.id: character.name for character in page.characters if character.name is not None
     }
+    page_index = page.source.get("page_index", 0)
     ordered_panels = sorted(page.panels, key=lambda panel: panel.order)
 
     segments: list[NarrativeSegment] = []
     last_scene_description: str | None = None
     for panel in ordered_panels:
         panel_segments, last_scene_description = _segments_for_panel(
-            panel, character_voices, character_names, last_scene_description
+            panel, character_voices, character_names, page_index, last_scene_description
         )
         segments.extend(panel_segments)
 

@@ -19,6 +19,7 @@ def _make_segment(
     voice_id: str = VOICE_NARRATOR,
     panel_id: str = "panel-0",
     character_name: str | None = None,
+    page_index: int = 0,
 ) -> NarrativeSegment:
     """Construit un NarrativeSegment minimal pour les tests."""
     return NarrativeSegment(
@@ -28,6 +29,7 @@ def _make_segment(
         voice_id=voice_id,
         text=text,
         character_name=character_name,
+        page_index=page_index,
     )
 
 
@@ -54,6 +56,31 @@ def test_dialogue_known_speaker_female_fr() -> None:
     assert script.segments[1] is dialogue
     assert dialogue.text == "おはよう"
     assert dialogue.voice_id == "jf_alpha"
+
+
+def test_narrator_segment_inherits_page_index_from_source() -> None:
+    """Le segment narrateur inséré (préfixe) hérite du page_index du dialogue source, pas 0 par défaut."""
+    dialogue = _make_segment(
+        "seg-1", "dialogue", "おはよう", voice_id="jf_alpha", page_index=7
+    )
+    sfx = _make_segment("seg-sfx", "sfx", "[ドン]", page_index=7)
+    script = _make_script([dialogue, sfx])
+
+    enrich_script(script, lang="fr")
+
+    assert script.segments[0].kind == "narration"
+    assert script.segments[0].page_index == 7
+
+
+def test_sfx_narrator_segment_inherits_page_index_from_source() -> None:
+    """Le préfixe inséré avant un SFX hérite aussi du page_index de ce SFX."""
+    sfx = _make_segment("seg-1", "sfx", "[ドン]", page_index=3)
+    script = _make_script([sfx])
+
+    enrich_script(script, lang="fr")
+
+    assert script.segments[0].kind == "narration"
+    assert script.segments[0].page_index == 3
 
 
 def test_dialogue_known_speaker_male_fr() -> None:

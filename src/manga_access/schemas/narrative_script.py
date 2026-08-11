@@ -17,6 +17,7 @@ class NarrativeSegment(BaseModel):
     text: str
     source_element_id: str | None = None
     character_name: str | None = None
+    page_index: int = 0
 
 
 class NarrativeScript(BaseModel):

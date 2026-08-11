@@ -51,7 +51,7 @@ class _FakeTTSBackend(TTSBackend):
 
 
 def _make_segment(
-    id_: str, text: str = "dummy", kind: str = "dialogue"
+    id_: str, text: str = "dummy", kind: str = "dialogue", page_index: int = 0
 ) -> NarrativeSegment:
     """Construit un NarrativeSegment minimal pour les tests."""
     return NarrativeSegment(
@@ -60,6 +60,7 @@ def _make_segment(
         kind=kind,
         voice_id="af_sky",
         text=text,
+        page_index=page_index,
     )
 
 
@@ -201,6 +202,22 @@ def test_assemble_audio_returns_timeline_with_correct_boundaries(tmp_path: Path)
     ]
     assert [s.id for s in timeline.segments] == ["seg-0", "seg-1", "seg-2"]
     assert all(s.kind == "dialogue" and s.text == "dummy" for s in timeline.segments)
+
+
+def test_timeline_segment_page_index_propagated_from_narrative_segment(tmp_path: Path) -> None:
+    """TimelineSegment.page_index reprend NarrativeSegment.page_index de son segment d'origine."""
+    output_path = tmp_path / "paged.opus"
+    script = NarrativeScript(
+        source={"file": "test.jpg", "page_index": 0},
+        segments=[
+            _make_segment("seg-0", page_index=0),
+            _make_segment("seg-1", page_index=2),
+        ],
+    )
+
+    timeline = assemble_audio(script, _FakeTTSBackend(), output_path)
+
+    assert [s.page_index for s in timeline.segments] == [0, 2]
 
 
 def test_timeline_excludes_only_empty_segments(tmp_path: Path) -> None:

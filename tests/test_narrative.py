@@ -42,10 +42,12 @@ def _make_panel(
     )
 
 
-def _make_page(panels: list[Panel], characters: list[Character] | None = None) -> MangaPage:
+def _make_page(
+    panels: list[Panel], characters: list[Character] | None = None, page_index: int = 0
+) -> MangaPage:
     """Construit un MangaPage minimal pour les tests."""
     return MangaPage(
-        source={"file": "test.jpg", "page_index": 0},
+        source={"file": "test.jpg", "page_index": page_index},
         reading_direction="right_to_left",
         characters=characters or [],
         panels=panels,
@@ -112,6 +114,33 @@ def test_dialogue_with_unnamed_speaker_has_no_character_name() -> None:
     script = build_narrative_script(page)
 
     assert script.segments[0].character_name is None
+
+
+def test_page_index_propagated_to_element_and_scene_segments() -> None:
+    """page.source["page_index"] est propagé à tous les segments (élément et scene_description)."""
+    element = _make_element("text-1", "dialogue", "おはよう")
+    panel = _make_panel("panel-0", order=0, elements=[element], scene_description="Une rue calme.")
+    page = _make_page([panel], page_index=5)
+
+    script = build_narrative_script(page)
+
+    assert all(segment.page_index == 5 for segment in script.segments)
+
+
+def test_page_index_defaults_to_zero_when_absent_from_source() -> None:
+    """Un MangaPage.source sans clé "page_index" laisse NarrativeSegment.page_index à 0."""
+    element = _make_element("text-1", "dialogue", "おはよう")
+    panel = _make_panel("panel-0", order=0, elements=[element])
+    page = MangaPage(
+        source={"file": "test.jpg"},
+        reading_direction="right_to_left",
+        characters=[],
+        panels=[panel],
+    )
+
+    script = build_narrative_script(page)
+
+    assert script.segments[0].page_index == 0
 
 
 def test_dialogue_unknown_speaker() -> None:

@@ -141,6 +141,7 @@ def assemble_audio(
                 text=text_stripped,
                 start_ms=start_ms,
                 end_ms=end_ms,
+                page_index=segment.page_index,
             )
         )
 

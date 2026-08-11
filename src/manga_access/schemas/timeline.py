@@ -15,6 +15,7 @@ class TimelineSegment(BaseModel):
     text: str
     start_ms: int = Field(ge=0)
     end_ms: int = Field(ge=0)
+    page_index: int = 0
 
 
 class Timeline(BaseModel):
