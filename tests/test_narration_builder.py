@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from manga_access.pipeline.narration_builder import (
+    _SFX_PREFIX_VARIATIONS_EN,
     _SFX_PREFIX_VARIATIONS_FR,
     enrich_script,
 )
@@ -129,6 +130,72 @@ def test_dialogue_known_speaker_named_takes_priority_over_unknown_gender() -> No
     enrich_script(script, lang="fr")
 
     assert script.segments[0].text == "Sakura dit :"
+
+
+def test_dialogue_known_speaker_female_en() -> None:
+    """Dialogue connu, voix jf_* : préfixe anglais 'She says:' inséré avant, en af_bella."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id="jf_alpha")
+    sfx = _make_segment("seg-sfx", "sfx", "[ドン]")
+    script = _make_script([dialogue, sfx])
+
+    enrich_script(script, lang="en")
+
+    assert script.segments[0].kind == "narration"
+    assert script.segments[0].text == "She says:"
+    assert script.segments[0].voice_id == "af_bella"
+    assert script.segments[1] is dialogue
+    assert dialogue.text == "おはよう"
+    assert dialogue.voice_id == "jf_alpha"
+
+
+def test_dialogue_known_speaker_male_en() -> None:
+    """Dialogue connu, voix jm_* : le segment narration inséré dit 'He says:'."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id="jm_kumo")
+    sfx = _make_segment("seg-sfx", "sfx", "[ドン]")
+    script = _make_script([dialogue, sfx])
+
+    enrich_script(script, lang="en")
+
+    assert script.segments[0].text == "He says:"
+
+
+def test_dialogue_known_speaker_unknown_gender_en() -> None:
+    """Une voix qui ne suit pas la convention f/m donne 'The character says:'."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id="voice-custom")
+    sfx = _make_segment("seg-sfx", "sfx", "[ドン]")
+    script = _make_script([dialogue, sfx])
+
+    enrich_script(script, lang="en")
+
+    assert script.segments[0].text == "The character says:"
+
+
+def test_dialogue_known_speaker_named_en() -> None:
+    """character_name renseigné : préfixe '{nom} says:' plutôt que genré, en anglais."""
+    dialogue = _make_segment(
+        "seg-1", "dialogue", "おはよう", voice_id="jf_alpha", character_name="Naruto"
+    )
+    sfx = _make_segment("seg-sfx", "sfx", "[ドン]")
+    script = _make_script([dialogue, sfx])
+
+    enrich_script(script, lang="en")
+
+    assert script.segments[0].text == "Naruto says:"
+
+
+def test_dialogue_unknown_speaker_en() -> None:
+    """VOICE_UNKNOWN, en : segment narration 'A voice says:' inséré avant, dialogue inchangé."""
+    dialogue = _make_segment("seg-1", "dialogue", "おはよう", voice_id=VOICE_UNKNOWN)
+    sfx = _make_segment("seg-sfx", "sfx", "[ドン]")
+    script = _make_script([dialogue, sfx])
+
+    enrich_script(script, lang="en")
+
+    assert script.segments[0].kind == "narration"
+    assert script.segments[0].text == "A voice says:"
+    assert script.segments[0].voice_id == "af_bella"
+    assert script.segments[1] is dialogue
+    assert dialogue.voice_id == VOICE_UNKNOWN
 
 
 def test_dialogue_known_speaker_ja_suffix_after() -> None:
@@ -310,6 +377,32 @@ def test_sfx_fr_inserts_narration_before_unchanged_sfx() -> None:
     assert sfx.text == "[ドン]"
 
 
+def test_sfx_en_inserts_narration_before_unchanged_sfx() -> None:
+    """SFX en : un segment narration anglais est inséré avant le sfx, qui reste inchangé."""
+    sfx = _make_segment("seg-1", "sfx", "[ドン]")
+    script = _make_script([sfx])
+
+    enrich_script(script, lang="en")
+
+    assert [s.kind for s in script.segments] == ["narration", "sfx"]
+    assert script.segments[0].voice_id == "af_bella"
+    assert script.segments[0].text in _SFX_PREFIX_VARIATIONS_EN
+    assert script.segments[1] is sfx
+    assert sfx.text == "[ドン]"
+
+
+def test_sfx_variation_selection_by_crc32_id_en() -> None:
+    """crc32(id) % 4 sélectionne déterministiquement la variation SFX anglaise (table exhaustive)."""
+    ids_by_bucket = ["seg-text-1", "seg-text-5", "seg-text-0", "seg-text-4"]
+    sfx_segments = [_make_segment(id_, "sfx", "[ドン]") for id_ in ids_by_bucket]
+    script = _make_script(sfx_segments)
+
+    enrich_script(script, lang="en")
+
+    narrator_texts = [script.segments[i].text for i in range(0, 8, 2)]
+    assert narrator_texts == list(_SFX_PREFIX_VARIATIONS_EN)
+
+
 def test_sfx_always_announced_even_consecutive() -> None:
     """Deux sfx consécutifs gardent chacun leur segment narration (pas de suivi de locuteur pour sfx)."""
     sfx_1 = _make_segment("seg-1", "sfx", "[ドン]")
@@ -382,11 +475,11 @@ def test_thought_unchanged() -> None:
 
 
 def test_unsupported_lang_raises() -> None:
-    """Un lang non supporté ('en') lève ValueError."""
+    """Un lang non supporté ('de') lève ValueError."""
     script = _make_script([_make_segment("seg-1", "narration", "texte")])
 
-    with pytest.raises(ValueError, match="en"):
-        enrich_script(script, lang="en")
+    with pytest.raises(ValueError, match="de"):
+        enrich_script(script, lang="de")
 
 
 def test_enrich_script_returns_same_instance() -> None:

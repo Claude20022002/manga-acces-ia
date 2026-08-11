@@ -10,9 +10,9 @@ from typing import Literal
 from manga_access.pipeline.narrative_builder import VOICE_NARRATOR, VOICE_UNKNOWN
 from manga_access.schemas.narrative_script import NarrativeScript, NarrativeSegment
 
-_SUPPORTED_LANGS = ("fr", "ja")
+_SUPPORTED_LANGS = ("fr", "ja", "en")
 
-_NARRATOR_VOICE_BY_LANG = {"fr": "ff_siwis", "ja": VOICE_NARRATOR}
+_NARRATOR_VOICE_BY_LANG = {"fr": "ff_siwis", "ja": VOICE_NARRATOR, "en": "af_bella"}
 
 _SFX_PREFIX_VARIATIONS_FR = (
     "On entend :",
@@ -20,6 +20,15 @@ _SFX_PREFIX_VARIATIONS_FR = (
     "Un bruit retentit :",
     "Dans le silence, on perçoit :",
 )
+
+_SFX_PREFIX_VARIATIONS_EN = (
+    "You hear:",
+    "Suddenly, you hear:",
+    "A noise rings out:",
+    "In the silence, you sense:",
+)
+
+_SFX_PREFIX_VARIATIONS_BY_LANG = {"fr": _SFX_PREFIX_VARIATIONS_FR, "en": _SFX_PREFIX_VARIATIONS_EN}
 
 
 def _infer_gender(voice_id: str) -> Literal["female", "male", "unknown"]:
@@ -81,19 +90,24 @@ def _dialogue_segments(
     (aucun dialogue/sfx après dans le même panel) suppriment chacun le
     segment de narration : un même personnage qui enchaîne plusieurs
     répliques ne se voit annoncé qu'une fois, et une réplique qui clôt son
-    panel (rien de vocal après elle) n'est pas non plus annoncée. fr et ja
+    panel (rien de vocal après elle) n'est pas non plus annoncée. fr/en et ja
     speaker inconnu : narration avant (préfixe). ja speaker connu : narration
     après (suffixe) — "{texte}、と言った" est une proposition rapportée qui
     suit la citation en japonais, gabarit conservé tel quel depuis la
-    Phase D plutôt que d'inventer une formulation en préfixe. fr speaker
-    connu et nommé (character_bank, Phase 9) : préfixe "{nom} dit :" plutôt
-    que le préfixe genré générique.
+    Phase D plutôt que d'inventer une formulation en préfixe. fr/en speaker
+    connu et nommé (character_bank, Phase 9) : préfixe "{nom} dit :"/
+    "{name} says:" plutôt que le préfixe genré générique.
     """
     if same_speaker_as_previous or not has_following_dialogue_or_sfx:
         return [segment]
 
     if segment.voice_id == VOICE_UNKNOWN:
-        prefix = "Une voix dit :" if lang == "fr" else "声が言った："
+        if lang == "ja":
+            prefix = "声が言った："
+        elif lang == "en":
+            prefix = "A voice says:"
+        else:
+            prefix = "Une voix dit :"
         return [_narrator_segment(prefix, lang, segment), segment]
 
     if lang == "ja":
@@ -101,31 +115,42 @@ def _dialogue_segments(
         return [segment, suffix]
 
     if segment.character_name is not None:
-        return [_narrator_segment(f"{segment.character_name} dit :", lang, segment), segment]
+        prefix = (
+            f"{segment.character_name} says:" if lang == "en" else f"{segment.character_name} dit :"
+        )
+        return [_narrator_segment(prefix, lang, segment), segment]
 
     gender = _infer_gender(segment.voice_id)
-    prefix = {"female": "Elle dit", "male": "Il dit", "unknown": "Le personnage dit"}[gender]
-    return [_narrator_segment(f"{prefix} :", lang, segment), segment]
+    if lang == "en":
+        prefix = {"female": "She says:", "male": "He says:", "unknown": "The character says:"}[gender]
+    else:
+        prefix = {"female": "Elle dit :", "male": "Il dit :", "unknown": "Le personnage dit :"}[gender]
+    return [_narrator_segment(prefix, lang, segment), segment]
 
 
 def _sfx_segments(segment: NarrativeSegment, lang: str) -> list[NarrativeSegment]:
-    """Précède un SFX (inchangé) d'une narration en fr ; inchangé en ja (pas de gabarit)."""
-    if lang != "fr":
+    """Précède un SFX (inchangé) d'une narration en fr/en ; inchangé en ja (pas de gabarit)."""
+    variations = _SFX_PREFIX_VARIATIONS_BY_LANG.get(lang)
+    if variations is None:
         return [segment]
-    index = zlib.crc32(segment.id.encode()) % len(_SFX_PREFIX_VARIATIONS_FR)
-    prefix = _SFX_PREFIX_VARIATIONS_FR[index]
+    index = zlib.crc32(segment.id.encode()) % len(variations)
+    prefix = variations[index]
     return [_narrator_segment(prefix, lang, segment), segment]
 
 
 def enrich_script(script: NarrativeScript, lang: str = "fr") -> NarrativeScript:
     """Insère des segments de narration contextuels autour des dialogues/sfx.
 
-    `lang` sélectionne le gabarit ("fr" ou "ja") — il ne détecte ni ne
+    `lang` sélectionne le gabarit ("fr", "ja" ou "en") — il ne détecte ni ne
     traduit rien : l'appelant garantit que `lang` correspond à la langue
-    réelle du contenu des segments concernés. Les segments dialogue/sfx
-    d'origine ne sont jamais modifiés (ni texte, ni voice_id) : seuls de
-    nouveaux segments `kind="narration"`, portant la voix du narrateur
-    (`ff_siwis` en fr, VOICE_NARRATOR en ja), sont insérés autour d'eux —
+    réelle du contenu des segments concernés. Note (Phase 9) : les dialogues
+    japonais eux-mêmes ne sont jamais traduits ici, quel que soit `lang` —
+    seuls les préfixes/suffixes de narration changent de langue. La
+    traduction des dialogues (Qwen3-VL) est la Phase 3 du roadmap, pas
+    encore implémentée. Les segments dialogue/sfx d'origine ne sont jamais
+    modifiés (ni texte, ni voice_id) : seuls de nouveaux segments
+    `kind="narration"`, portant la voix du narrateur (`ff_siwis` en fr,
+    VOICE_NARRATOR en ja, `af_bella` en en), sont insérés autour d'eux —
     c'est ce qui permet à assemble_audio() de synthétiser le préfixe/suffixe
     avec la voix du narrateur et le dialogue/sfx avec sa propre voix.
     Un dialogue n'est annoncé que lors d'un changement de locuteur : la
