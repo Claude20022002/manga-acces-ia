@@ -17,3 +17,4 @@ logs/
 *.log
 .DS_Store
 manga109s/
+.claude/settings.json
